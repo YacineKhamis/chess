@@ -1,0 +1,41 @@
+name: Construire les puzzles
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_rating:
+        description: "Classement minimum des puzzles"
+        default: "400"
+      max_rating:
+        description: "Classement maximum des puzzles"
+        default: "1300"
+      per_theme:
+        description: "Nombre maximum de puzzles par thème"
+        default: "250"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install zstandard
+      - name: Extraire les puzzles de la base Lichess
+        run: >
+          python tools/build_puzzles.py
+          --min ${{ inputs.min_rating }}
+          --max ${{ inputs.max_rating }}
+          --per-theme ${{ inputs.per_theme }}
+      - name: Enregistrer dans le dépôt
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+          git add data/puzzles-lichess.json
+          git diff --cached --quiet || git commit -m "Mise à jour des puzzles Lichess"
+          git push
