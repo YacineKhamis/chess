@@ -12,6 +12,7 @@ export class Board {
     this.selected = null;
     this.lastMove = null;
     this.marks = {};                         // square -> class
+    this.zone = null;                        // Set de cases teintées (ex. la cage du roi)
     this.arrows = [];
     el.classList.add('board');
     el.innerHTML = '';
@@ -45,6 +46,7 @@ export class Board {
   setLastMove(from, to) { this.lastMove = from ? [from, to] : null; this.render(); }
   mark(square, cls) { this.marks[square] = cls; this.render(); }
   clearMarks() { this.marks = {}; this.render(); }
+  setZone(squares) { this.zone = squares && squares.size ? squares : null; this.render(); }
   setArrows(list) { this.arrows = list || []; this._drawArrows(); }
 
   _squares() {
@@ -69,6 +71,7 @@ export class Board {
       if (this.lastMove && this.lastMove.includes(sq)) d.classList.add('last');
       if (this.selected === sq) d.classList.add('selected');
       if (this.marks[sq]) d.classList.add(this.marks[sq]);
+      if (this.zone && this.zone.has(sq)) d.classList.add('zone');
       if (targets.includes(sq)) d.classList.add(this.pieces[sq] ? 'target-capture' : 'target');
       const p = this.pieces[sq];
       if (p) {

@@ -7,19 +7,25 @@ export function getEngine() {
   return instance;
 }
 
-class Engine {
-  constructor() {
-    this.worker = new Worker(ENGINE_PATH);
+// Transport par défaut : un Web Worker. Les tests Node passent leur propre transport.
+function workerTransport() {
+  const worker = new Worker(ENGINE_PATH);
+  return {
+    send: cmd => worker.postMessage(cmd),
+    listen: fn => { worker.onmessage = e => fn(typeof e.data === 'string' ? e.data : String(e.data)); },
+  };
+}
+
+export class Engine {
+  constructor(transport = workerTransport()) {
+    this.transport = transport;
     this.listeners = [];
-    this.worker.onmessage = e => {
-      const line = typeof e.data === 'string' ? e.data : String(e.data);
-      this.listeners.slice().forEach(fn => fn(line));
-    };
+    transport.listen(line => this.listeners.slice().forEach(fn => fn(line)));
     this.queue = Promise.resolve();
     this.ready = this._waitFor('uciok', () => this.send('uci'))
       .then(() => { this.send('setoption name Hash value 16'); return this._waitFor('readyok', () => this.send('isready')); });
   }
-  send(cmd) { this.worker.postMessage(cmd); }
+  send(cmd) { this.transport.send(cmd); }
   _waitFor(token, start) {
     return new Promise(res => {
       const fn = l => { if (l.startsWith(token)) { this.listeners = this.listeners.filter(x => x !== fn); res(); } };

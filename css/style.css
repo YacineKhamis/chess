@@ -207,6 +207,13 @@ h1, h2 { font-family: var(--display); line-height: 1.1; margin: 0; }
   border-radius: 50%;
   border: 5px solid rgba(20, 30, 30, .35);
 }
+.sq.zone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--ko) 30%, transparent);
+  pointer-events: none;
+}
 .sq.mark-ok { box-shadow: inset 0 0 0 5px var(--ok); }
 .sq.mark-ko { box-shadow: inset 0 0 0 5px var(--ko); }
 .piece {
