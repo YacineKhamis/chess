@@ -22,7 +22,12 @@ export function rules(st, by) {
   }
   if (c.isInsufficientMaterial()) {
     if (hold) return win('Il ne reste plus assez de matériel pour mater : nulle, tu as tenu.');
-    if (kind === 'promote') return fail('Ton pion est tombé : partie nulle.', { tag: 'piece-lost' });
+    if (kind === 'promote') {
+      const last = c.history({ verbose: true }).at(-1);
+      if (by === 'user' && last && (last.promotion === 'n' || last.promotion === 'b'))
+        return fail(`Promotion en ${last.promotion === 'n' ? 'cavalier' : 'fou'} : il ne reste pas assez de matériel pour mater, partie nulle.`, { tag: 'underpromo' });
+      return fail('Ton pion est tombé : partie nulle.', { tag: 'piece-lost' });
+    }
     return fail('Ta pièce a été prise : vérifie toujours qu’elle est protégée quand le roi s’approche.', { tag: 'piece-lost' });
   }
   if (c.isThreefoldRepetition()) return hold ? win('Répétition de la position : nulle, tu as tenu.') : fail('Tu tournes en rond : la même position est revenue trois fois.');

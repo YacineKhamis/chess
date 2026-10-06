@@ -10,7 +10,10 @@ const KNOWN = ['acq', 'mast', 'rusty'];
 export function mount(root) {
   const store = load();
   const today = P.dayStr(Date.now());
-  if (!store.seance || store.seance.date !== today || !store.seance.items?.length) {
+  // Nouvelle séance : premier passage du jour, ou séance du jour terminée alors qu'il reste du travail à proposer.
+  const finishedToday = store.seance && store.seance.date === today && store.seance.i >= (store.seance.items?.length || 0);
+  if (!store.seance || store.seance.date !== today || !store.seance.items?.length
+      || (finishedToday && P.planSeance(store, REGISTRY, Date.now()).length)) {
     store.seance = { date: today, items: P.planSeance(store, REGISTRY, Date.now()), i: 0, done: 0 };
     save();
   }
@@ -53,11 +56,13 @@ export function mount(root) {
     current = id;
     suite.hidden = true;
     setText(step, `Séance · ${se.i + 1}/${se.items.length} · ${KIND[it.kind] || ''} · partie ${Math.min(se.done + 1, it.n)}/${it.n}`);
-    // Dans un bloc « en cours », une partie sur quatre repart d'une de tes erreurs passées.
-    const errs = store.drills?.[id]?.err || [];
-    const replayItem = it.kind === 'focus' && errs.length && se.done % 4 === 3 ? errs[errs.length - 1] : null;
+    // Dans un bloc « en cours », une partie sur quatre repart d'une de tes erreurs passées (décidé à chaque partie).
+    const pickReplay = () => {
+      const errs = store.drills?.[id]?.err || [];
+      return it.kind === 'focus' && errs.length && se.done % 4 === 3 ? errs[errs.length - 1] : null;
+    };
     child = mountDrill(body, id, {
-      replayItem,
+      pickReplay,
       mystery: it.kind === 'melange',
       onDone: code => {
         if (!code || code === 'R') return;   // parties « hors série » : elles ne comptent pas dans la séance

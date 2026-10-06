@@ -23,7 +23,8 @@ function card(store, d, here) {
   const st = r?.st || 'new';
   const top = d.levels.length - 1;
   let sub;
-  if (KNOWN.includes(st)) sub = `${P.stateLabel(st)} · contrôle ${P.dueLabel(r.due, Date.now())}`;
+  if (st === 'rusty') sub = `${P.stateLabel(st)} · dès la prochaine séance`;
+  else if (KNOWN.includes(st)) sub = `${P.stateLabel(st)} · contrôle ${P.dueLabel(r.due, Date.now())}`;
   else if (r) sub = `${d.levels.length > 1 ? `Palier ${Math.min(r.level ?? 0, top) + 1}/${top + 1} · ` : ''}série ${P.streakDots(r, r.need ?? d.need ?? 3)}`;
   else sub = d.levels.length > 1 ? `${d.levels.length} paliers` : 'Nouveau';
   const dim = !KNOWN.includes(st) && st !== 'learn' && !P.prereqOk(store, REGISTRY, d.id);

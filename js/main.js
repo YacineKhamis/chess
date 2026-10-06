@@ -16,7 +16,9 @@ const KIND = {
 };
 
 function seanceCard(s) {
-  const items = P.planSeance(s, REGISTRY, Date.now());
+  // Une séance commencée aujourd'hui se continue telle qu'elle a été prévue.
+  const se = s.seance, ongoing = se && se.date === P.dayStr(Date.now()) && se.i > 0 && se.i < (se.items?.length || 0);
+  const items = ongoing ? se.items.slice(se.i) : P.planSeance(s, REGISTRY, Date.now());
   if (!items.length) {
     return `<section class="seance-card"><h2>Séance du jour</h2><p>Tout est à jour. ${P.nextDueText ? P.nextDueText(s, REGISTRY, Date.now()) : ''}</p>
       <p><a class="btn" href="#/parcours">Voir le parcours</a></p></section>`;
@@ -36,7 +38,7 @@ function seanceCard(s) {
     <section class="seance-card">
       <h2>Séance du jour</h2>
       <ul class="seance-items">${items.map(line).join('')}</ul>
-      <p class="actions"><a class="btn primary" href="#/seance">Commencer la séance</a> <a class="btn ghost" href="#/parcours">Ou choisir moi-même : Parcours ›</a></p>
+      <p class="actions"><a class="btn primary" href="#/seance">${ongoing ? `Continuer la séance (${se.i + 1}/${se.items.length})` : 'Commencer la séance'}</a> <a class="btn ghost" href="#/parcours">Ou choisir moi-même : Parcours ›</a></p>
     </section>`;
 }
 

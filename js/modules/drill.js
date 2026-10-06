@@ -13,14 +13,15 @@ import * as P from '../progress.js';
 
 // Contexte partagé : moteur, tables exactes, hasard.
 let ctxP = null;
-export const drillContext = () => (ctxP ||= loadTB().then(tb => ({ engine: getEngine(), tb, rng: Math.random })));
+// Le moteur est relu à chaque appel : getEngine() remplace un moteur tombé en panne.
+export const drillContext = () => (ctxP ||= loadTB().then(tb => ({ get engine() { return getEngine(); }, tb, rng: Math.random })));
 
 const CAGE_FAMILIES = ['kqk', 'krk', 'krrk'];
 const cap = s => s[0].toUpperCase() + s.slice(1);
 const plural = (n, w, ws = w + 's') => `${n} ${n > 1 ? ws : w}`;
 const KNOWN = ['acq', 'mast', 'rusty'];
 
-export function mount(root, id, { tabs = null, onDone = null, mystery = false, replayItem = null } = {}) {
+export function mount(root, id, { tabs = null, onDone = null, mystery = false, pickReplay = null } = {}) {
   const spec = DRILLS[id];
   if (!spec) {
     root.replaceChildren(h(`<section class="home"><p>Cet exercice n’existe pas (encore).</p><p><a href="#/parcours">Retour au parcours</a></p></section>`));
@@ -84,7 +85,8 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
     const r = rec();
     if (!r || !r.n) { setText($('.stats', view), 'Aucun essai pour l’instant.'); return; }
     let s = r.ok ? `${plural(r.n, 'essai')}, ${plural(r.ok, 'réussite')}${r.clean ? `, dont ${plural(r.clean, 'propre')}` : ''}.` : `${plural(r.n, 'essai')}, pas encore de réussite.`;
-    if (KNOWN.includes(r.st) && r.due) s += ` Prochain contrôle : ${P.dueLabel(r.due, Date.now())}.`;
+    if (r.st === 'rusty') s += ' À reprendre dès la prochaine séance.';
+    else if (KNOWN.includes(r.st) && r.due) s += ` Prochain contrôle : ${P.dueLabel(r.due, Date.now())}.`;
     setText($('.stats', view), s);
   }
   function renderMeta() {
@@ -166,9 +168,9 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
     setVerdict('wait', 'Préparation de la position…');
     show([]); board.setDests(null);
     let s;
-    if (replayItem && !same) {
+    const replayItem = !same && pickReplay ? pickReplay() : null;
+    if (replayItem) {
       s = await prepareReplay(replayItem);
-      replayItem = null;
       if (s) return begin(s, { fromErr: s.fromErr, note: 'Ta position difficile revient… en miroir ou en couleurs inversées.' });
     }
     if (nextP && !same) { s = await nextP; nextP = null; }
@@ -182,13 +184,38 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
     }
   }
   // Reprend une position précise (avant l'erreur, moment clé) hors série.
-  function replayFrom(fen) {
-    const tbP = ctx.tb && ctx.tb.probe(fen);
-    begin({ ...start, fen, ref: tbP && tbP.win ? tbP.dist : null, E0: attempt.lastV ?? start.E0, k: null, key: null, keySet: null }, { retry: true });
+  // Les seuils relatifs (parer une menace, gain de matériel) se calculent sur l'évaluation de CETTE position,
+  // jamais sur celle d'après l'erreur.
+  async function replayFrom(fen) {
+    const s = { ...start, fen, k: null, key: null, keySet: null };
+    if (fen !== start.fen) {
+      const tbP = ctx.tb && ctx.tb.probe(fen);
+      s.ref = tbP && tbP.win ? tbP.dist : null;
+      if (spec.oracle === 'engine') {
+        setVerdict('wait', 'Préparation…'); show([]);
+        await ctx.engine.newGame();
+        const [l] = await ctx.engine.analyse(fen, { movetime: 800 });
+        s.E0 = l ? l.cp : start.E0; s.Ealt = null;
+        if (spec.goal.kind === 'mate' && !spec.goal.n) s.ref = l && l.mate > 0 ? l.mate : null;
+      }
+    }
+    return begin(s, { retry: true });
+  }
+
+  // Une panne du moteur ne doit jamais laisser l'écran bloqué.
+  async function guard(fn) {
+    try { return await fn(); } catch (err) {
+      console.warn(err);
+      if (!alive) return;
+      busy = false; nextP = null;
+      setVerdict('ko', 'Le moteur ne répond plus. Clique sur « Nouvelle position » ; si ça persiste, recharge la page.');
+      show(['new']);
+    }
   }
 
   // ---------- Coups ----------
-  async function onMove(from, to, promo) {
+  function onMove(from, to, promo) { return guard(() => playMove(from, to, promo)); }
+  async function playMove(from, to, promo) {
     if (!attempt || !attempt.userToMove || busy) return;
     const uci = from + to + (promo || '');
     let preview;
@@ -241,11 +268,12 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
     renderHeader(a.level); renderStats();
     if (onDone) onDone(code, a);
     // Prépare déjà la position suivante.
-    nextP = prepare(P.setupFor(spec, rec()));
+    nextP = prepare(P.setupFor(spec, rec())).catch(() => null);
   }
 
   // ---------- Boutons ----------
-  view.addEventListener('click', async e => {
+  view.addEventListener('click', e => guard(() => onClick(e)));
+  async function onClick(e) {
     const tab = e.target.closest('[data-tab]');
     if (tab && tabs) { if (tab.dataset.tab !== spec.id) { sessionStorage.setItem('finales-tab', tab.dataset.tab); location.hash = `#/finales/${tab.dataset.tab}`; } return; }
     const act = e.target.closest('[data-act]')?.dataset.act;
@@ -289,7 +317,7 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
       board.setViz({ ...(w.viz || {}), arrows: [...arrows, ...((w.viz && w.viz.arrows) || [])] });
       setExplain([...(w.text || []), 'En rouge : ton coup. En vert : le meilleur.']);
     }
-  });
+  }
   view.addEventListener('change', e => {
     if (e.target.matches('[data-act="cage"]')) { cage = e.target.checked; renderCage(); }
   });
@@ -297,7 +325,7 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
   // ---------- Démarrage ----------
   setVerdict('wait', 'Chargement du moteur et des tables…');
   renderHeader(P.setupFor(spec, rec()).level); renderStats();
-  drillContext().then(c => { if (!alive) return; ctx = c; fresh(); })
+  drillContext().then(c => { if (!alive) return; ctx = c; guard(fresh); })
     .catch(() => setVerdict('ko', 'Impossible de charger le moteur ou les tables (data/tb). Recharge la page.'));
 
   function cleanup() {
