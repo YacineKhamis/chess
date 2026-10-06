@@ -23,7 +23,8 @@ const ENGINE_PATH = 'vendor/stockfish/stockfish-18-lite-single.js';
 
 let instance = null;
 export function getEngine() {
-  if (!instance) instance = new Engine();
+  // Un moteur tombé en panne (ou arrêté) est remplacé au prochain appel.
+  if (!instance || instance.dead || instance.closed) instance = new Engine();
   return instance;
 }
 
