@@ -84,7 +84,6 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
     const r = rec();
     if (!r || !r.n) { setText($('.stats', view), 'Aucun essai pour l’instant.'); return; }
     let s = `${plural(r.n, 'essai')}, ${plural(r.ok, 'réussite')}, dont ${plural(r.clean, 'propre')}.`;
-    if (r.best) s += ` Meilleur : ${plural(r.best, 'coup')}.`;
     if (KNOWN.includes(r.st) && r.due) s += ` Prochain contrôle : ${P.dueLabel(r.due, Date.now())}.`;
     setText($('.stats', view), s);
   }
