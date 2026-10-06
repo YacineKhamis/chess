@@ -48,11 +48,15 @@ export function controlled(chess, color) {
 
 // Zone accessible au roi de `color` en marchant de proche en proche sur des cases non contrôlées.
 // Une pièce adverse non défendue compte comme accessible (le roi peut la prendre).
+// Le Set rendu porte aussi deux listes (spec §5.2) : `hanging`, les pièces adverses non défendues que le roi peut
+// prendre tout de suite (adjacentes), et `leaks`, celles qu'il n'atteindrait qu'en plusieurs coups.
 export function kingZone(chess, color) {
   const start = kingSquare(chess, color);
-  if (!start) return new Set();
+  const zone = new Set();
+  zone.hanging = []; zone.leaks = [];
+  if (!start) return zone;
   const ctrl = controlled(chess, other(color));
-  const zone = new Set([start]);
+  zone.add(start);
   const todo = [start];
   while (todo.length) {
     const cur = todo.pop();
@@ -62,9 +66,15 @@ export function kingZone(chess, color) {
       if (p && p.color === color) continue;
       zone.add(n);
       if (!p) todo.push(n);
+      else (cur === start ? zone.hanging : zone.leaks).push(n);
     }
   }
   return zone;
+}
+// Distance entre les deux rois (en coups de roi), ou null s'il en manque un.
+export function kingDist(chess) {
+  const a = kingSquare(chess, 'w'), b = kingSquare(chess, 'b');
+  return a && b ? dist(a, b) : null;
 }
 
 // Pièces de `color` attaquées et non défendues.

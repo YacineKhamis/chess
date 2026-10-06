@@ -4,21 +4,33 @@
 // Une unité n'est gardée que si chaque nouvelle pièce : n'est pas attaquée par l'autre camp,
 // n'attaque aucune pièce adverse et n'attaque aucune case de l'empreinte du motif.
 // Fonctions pures sur des placements { case: pièce } (majuscule = blanc), utilisables dans Node.
-import { int, pick, shuffle, shift, sqAt, KNIGHT, KING, ROOK_DIRS, BISHOP_DIRS, ALL_SQUARES } from './geom.js';
+//
+// La pose est constructive : on énumère les emplacements qui respectent la règle, puis on tire au hasard
+// parmi eux. Ajouter des pièces ne fait que couper des lignes : les attaques calculées avant la pose
+// contiennent donc celles d'après (hors attaques des nouvelles pièces, vérifiées une à une).
+import { pick, shuffle, shift, sqAt, fileOf, KNIGHT, KING, ROOK_DIRS, BISHOP_DIRS, ALL_SQUARES, int } from './geom.js';
 
 export const isWhite = p => p === p.toUpperCase();
 const QUEEN_DIRS = [...ROOK_DIRS, ...BISHOP_DIRS];
+
+// Tables précalculées : sauts (cavalier, roi) et rayons (une liste de cases par direction) depuis chaque case.
+// Les listes de sauts sont partagées (gelées) : attacksFrom les renvoie telles quelles, sans copie.
+const jumps = vecs => Object.fromEntries(ALL_SQUARES.map(sq => [sq, Object.freeze(vecs.map(([f, r]) => shift(sq, f, r)).filter(Boolean))]));
+const rays = dirs => Object.fromEntries(ALL_SQUARES.map(sq => [sq, dirs.map(([df, dr]) => {
+  const out = [];
+  for (let s = shift(sq, df, dr); s; s = shift(s, df, dr)) out.push(s);
+  return out;
+}).filter(r => r.length)]));
+const JUMPS = { n: jumps(KNIGHT), k: jumps(KING) };
+const RAYS = { r: rays(ROOK_DIRS), b: rays(BISHOP_DIRS), q: rays(QUEEN_DIRS) };
 
 // Cases attaquées par la pièce posée en `sq` (les lignes s'arrêtent à la première pièce, incluse).
 export function attacksFrom(placement, sq, piece = placement[sq]) {
   const t = piece.toLowerCase();
   if (t === 'p') return [-1, 1].map(df => shift(sq, df, isWhite(piece) ? 1 : -1)).filter(Boolean);
-  if (t === 'n') return KNIGHT.map(([f, r]) => shift(sq, f, r)).filter(Boolean);
-  if (t === 'k') return KING.map(([f, r]) => shift(sq, f, r)).filter(Boolean);
+  if (t === 'n' || t === 'k') return JUMPS[t][sq];
   const out = [];
-  for (const [df, dr] of t === 'r' ? ROOK_DIRS : t === 'b' ? BISHOP_DIRS : QUEEN_DIRS) {
-    for (let s = shift(sq, df, dr); s; s = shift(s, df, dr)) { out.push(s); if (placement[s]) break; }
-  }
+  for (const ray of RAYS[t][sq]) for (const s of ray) { out.push(s); if (placement[s]) break; }
   return out;
 }
 
@@ -34,12 +46,10 @@ export const isAttacked = (placement, sq, colour) =>
   Object.entries(placement).some(([s, p]) => isWhite(p) === (colour === 'w') && attacksFrom(placement, s, p).includes(sq));
 
 // Pièce de `placed` qui casse la règle d'inertie, ou null si toutes sont inertes.
-// onlyPlaced : les attaques des pièces déjà posées sont vérifiées ailleurs ; on ne regarde alors que
-// les attaques entre nouvelles pièces (une paire : la tour blanche ne doit pas viser la tour noire).
-export function notInert(m, placed, foot, onlyPlaced = false) {
+export function notInert(m, placed, foot) {
   for (const s of placed) {
     const p = m[s], white = isWhite(p);
-    if (!onlyPlaced && isAttacked(m, s, white ? 'b' : 'w')) return s;
+    if (isAttacked(m, s, white ? 'b' : 'w')) return s;
     for (const t of attacksFrom(m, s, p)) {
       if (foot.has(t)) return s;
       const q = m[t];
@@ -49,8 +59,55 @@ export function notInert(m, placed, foot, onlyPlaced = false) {
   return null;
 }
 
+// La pièce `piece` posée en `sq` serait-elle inerte ? att = attaques actuelles de chaque camp.
+function inertAt(m, foot, att, sq, piece) {
+  if (m[sq] || foot.has(sq)) return false;
+  const white = isWhite(piece);
+  if (att[white ? 'b' : 'w'].has(sq)) return false;
+  for (const t of attacksFrom(m, sq, piece)) {
+    if (foot.has(t)) return false;
+    const q = m[t];
+    if (q && isWhite(q) !== white) return false;
+  }
+  return true;
+}
+
+const attacks = m => ({ w: attackedBy(m, 'w'), b: attackedBy(m, 'b') });
+
+// Béliers possibles, sur une colonne sans aucun pion (pas de pions empilés : la position reste naturelle).
+// Les pions restent au centre de l'échiquier : un pion noir en 3e rangée fausserait l'évaluation.
+function ramSpots(m, foot, att) {
+  const pawnFiles = new Set(Object.keys(m).filter(s => m[s].toLowerCase() === 'p').map(fileOf));
+  const spots = [];
+  for (let f = 0; f < 8; f++) {
+    if (pawnFiles.has(f)) continue;
+    for (let r = 2; r <= 4; r++) {                 // pion blanc en 3e–5e rangée : des pions de milieu de partie
+      const a = sqAt(f, r), b = sqAt(f, r + 1);
+      if (inertAt(m, foot, att, a, 'P') && inertAt(m, foot, att, b, 'p')) spots.push([a, b]);
+    }
+  }
+  return spots;
+}
+// Cases possibles pour chaque pièce d'une paire de type `type`. Pour garder une allure de partie,
+// chaque pièce reste dans sa moitié de l'échiquier, à une rangée près (pas de cavalier noir en a1).
+const pairSpots = (m, foot, att, type) => ({
+  W: ALL_SQUARES.filter(s => +s[1] <= 5 && inertAt(m, foot, att, s, type)),
+  B: ALL_SQUARES.filter(s => +s[1] >= 4 && inertAt(m, foot, att, s, type.toLowerCase())),
+});
+// Une paire tirée parmi ces cases, dont les deux pièces ne s'attaquent pas l'une l'autre.
+function tryPair(rng, m, { W, B }, type) {
+  for (let i = 0; i < 12; i++) {
+    const w = pick(rng, W), b = pick(rng, B);
+    if (w === b) continue;
+    const trial = { ...m, [w]: type, [b]: type.toLowerCase() };
+    if (attacksFrom(trial, w).includes(b) || attacksFrom(trial, b).includes(w)) continue;
+    return trial;
+  }
+  return null;
+}
+
 /**
- * Ajoute jusqu'à `n` unités inertes au placement (au plus 200 essais de pose).
+ * Ajoute jusqu'à `n` unités inertes au placement.
  * opts.kinds : ['ram', 'pair'] par défaut ; opts.types : types des paires (['N', 'B', 'R']).
  * Renvoie { placement, units } : le nouveau placement (copie) et le nombre d'unités posées.
  * La position reste légale : aucune nouvelle pièce n'attaque le roi adverse, les pions restent
@@ -58,28 +115,24 @@ export function notInert(m, placed, foot, onlyPlaced = false) {
  */
 export function addNoise(rng, placement, footprint, n, { kinds = ['ram', 'pair'], types = ['N', 'B', 'R'] } = {}) {
   const foot = asSet(footprint);
-  let m = { ...placement }, units = 0;
-  // Attaques de chaque camp avant la pose : poser des pièces ne fait que couper des lignes, donc ces
-  // ensembles contiennent les attaques après la pose (hors attaques des nouvelles pièces, vérifiées à part).
-  let att = { w: attackedBy(m, 'w'), b: attackedBy(m, 'b') };
-  for (let t = 0; t < 200 && units < n; t++) {
-    const trial = { ...m }, placed = [];
-    if (pick(rng, kinds) === 'ram') {
-      const f = int(rng, 0, 7), r = int(rng, 1, 5);
-      const a = sqAt(f, r), b = sqAt(f, r + 1);
-      if (trial[a] || trial[b] || foot.has(a) || foot.has(b)) continue;
-      trial[a] = 'P'; trial[b] = 'p'; placed.push(a, b);
+  let m = { ...placement }, units = 0, cache = null;
+  const misses = {};                               // échecs par sorte d'unité : au bout de 3, on n'insiste plus
+  const alive = x => (misses[x] || 0) < 3;
+  for (let t = 0; t < 4 * n && units < n; t++) {
+    const ks = kinds.filter(k => (k === 'ram' ? alive('ram') : types.some(alive)));
+    if (!ks.length) break;
+    cache ||= { att: attacks(m) };                 // recalculé seulement après une pose réussie
+    let next = null, what;
+    if (pick(rng, ks) === 'ram') {
+      what = 'ram';
+      cache.ram ||= ramSpots(m, foot, cache.att);
+      if (cache.ram.length) { const [a, b] = pick(rng, cache.ram); next = { ...m, [a]: 'P', [b]: 'p' }; }
     } else {
-      const free = ALL_SQUARES.filter(s => !trial[s] && !foot.has(s));
-      if (free.length < 2) break;
-      const type = pick(rng, types), a = pick(rng, free);
-      const b = pick(rng, free.filter(s => s !== a));
-      trial[a] = type; trial[b] = type.toLowerCase(); placed.push(a, b);
+      what = pick(rng, types.filter(alive));
+      const spots = cache[what] ||= pairSpots(m, foot, cache.att, what);
+      if (spots.W.length && spots.B.length) next = tryPair(rng, m, spots, what);
     }
-    if (placed.some(s => att[isWhite(trial[s]) ? 'b' : 'w'].has(s))) continue;
-    if (notInert(trial, placed, foot, true)) continue;
-    m = trial; units++;
-    att = { w: attackedBy(m, 'w'), b: attackedBy(m, 'b') };
+    if (next) { m = next; units++; cache = null; } else misses[what] = (misses[what] || 0) + 1;
   }
   return { placement: m, units };
 }

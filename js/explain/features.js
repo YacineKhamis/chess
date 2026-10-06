@@ -2,7 +2,7 @@
 // Tout est calculé sur la grille native (board64.js) : coups légaux exacts, ensembles d'attaque, remplissages du roi.
 // Convention : « us » = camp qui joue le coup expliqué, « def » = l'autre camp (le roi seul dans les mats).
 import {
-  F, R, name, colorOf, typeOf, other, cheb, manh, edge, VALUE, KING_N, RAY, SLIDE, DIRS, dirOf, between,
+  F, R, name, colorOf, typeOf, other, cheb, manh, edge, knightJump, VALUE, KING_N, RAY, SLIDE, DIRS, dirOf, between,
   parse, fenOf, keyOf, attackSet, pieceAttacks, attacked, attackersOf, kingOf, inCheck, units,
   legalMoves, hasLegal, play, nullPos, findMove, sanOf, gridAfter,
 } from './board64.js';
@@ -20,6 +20,10 @@ class Node {
   king(c) { return kingOf(this.g, c); }
   // Le camp `c` n'a-t-il que son roi ?
   lone(c) { return (this.m['lone' + c] ??= units(this.g, c).length === 1); }
+  // Le camp `c` n'a-t-il que son roi et des pions (finales de mat avec pions bloqués) ?
+  bare(c) { return (this.m['bare' + c] ??= units(this.g, c).every(u => u.t === 'k' || u.t === 'p')); }
+  // Tous les coups légaux du camp au trait sont-ils des coups de roi (pions bloqués, pièces clouées) ?
+  get kingOnly() { return this.m.kingOnly ??= this.legal.every(m => typeOf(m.p) === 'k'); }
   san(m) { return sanOf(this.pos, m, this.legal); }
   move(uci) { return findMove(this.pos, uci, this.legal); }
   child(m) { return nodeOf(play(this.pos, m)); }
@@ -104,6 +108,7 @@ export function cuts(g, def, bx = box(g, def)) {
       if (Z.some(z => co(z) === li)) continue;
       const side = Math.sign(co(Z[0]) - li);
       if (!Z.every(z => Math.sign(co(z) - li) === side)) continue;
+      if ((side < 0 && li === 7) || (side > 0 && li === 0)) continue;  // ligne du bord : rien à couper au-delà
       const lo = Math.max(0, Math.min(...Z.map(ot)) - 1), hi = Math.min(7, Math.max(...Z.map(ot)) + 1);
       const PA = pieceAttacks(g, i, { ghost: K, skip: Ku });
       let ok = true;
@@ -118,10 +123,11 @@ export function cuts(g, def, bx = box(g, def)) {
   }
   return out.sort((a, b) => a.width - b.width || a.sq - b.sq);
 }
-// La coupure tient aussi « pour de vrai » : la cage (notre roi compris) reste du même côté, sans fuite.
+// La coupure tient aussi « pour de vrai » : la cage (notre roi compris) reste du même côté, et aucune de nos pièces
+// n'est prenable tout de suite. (Une pièce atteignable plus tard — « leaks » — ne rompt pas la coupure.)
 export function realCut(g, def, c) {
   const cg = cage(g, def), co = c.kind === 'file' ? F : R;
-  if (cg.hanging.length || cg.leaks.length) return false;
+  if (cg.hanging.length) return false;
   for (const z of cg.zone) if (Math.sign(co(z) - c.idx) !== c.side) return false;
   return true;
 }
@@ -161,9 +167,10 @@ export function checkInfo(bn, an, m, def) {
 }
 
 // ---------- F6 sauvetage : une pièce attaquée maintenant, plus après le coup ----------
+// Seules les prises rentables comptent comme menaces (le roi ne prend que des pièces non défendues : toujours rentable).
 export function rescue(bn, an, m) {
-  if (bn.check) return null;
-  const threatened = threatenedBy(bn).filter(c => typeOf(c.cap) !== 'k');
+  if (bn.check || !bn.nul) return null;
+  const threatened = threatenedBy(bn).filter(c => typeOf(c.cap) !== 'k' && seeMove(bn.nul.pos, c) > 0);
   const still = captures(an).filter(c => typeOf(c.cap) !== 'k');
   if (!threatened.length || still.length) return null;
   const sqs = [...new Set(threatened.map(c => c.to))];
@@ -205,9 +212,11 @@ export function opposition(a, b) {
 }
 
 // ---------- F11 pat ----------
+// Le défenseur (au trait dans an) n'est pas en échec, ne peut jouer que son roi (roi seul, pions bloqués)
+// et n'a plus que 1 ou 2 coups.
 export function stalemateDanger(an, def) {
-  if (an.check || an.status) return null;
-  if (!an.lone(def)) return null;
+  if (an.check || an.status || an.turn !== def) return null;
+  if (!an.kingOnly) return null;
   const ms = an.legal;
   if (ms.length > 2) return null;
   return { n: ms.length, sqs: [...new Set(ms.map(r => r.to))] };
@@ -343,44 +352,54 @@ export function skewers(g, at, us) {
   return out;
 }
 
-// Le gain matériel annoncé est-il confirmé ? Par la variante (Δ ≥ 2 en 5 demi-coups, ou mat), sinon par une recherche
-// courte : après chaque réponse adverse, une de nos prises gagne au moins `need` (SEE).
-export function pvGain(bn, pv, us, plies = 5) {
-  let pos = bn.pos;
+// Valeur matérielle d'un coup (prise + promotion).
+export const capVal = m => (m.cap ? VALUE[typeOf(m.cap)] : 0) + (m.promo ? VALUE[m.promo] - 1 : 0);
+
+// Gain matériel le long d'une variante (≤ `plies` demi-coups, à partir de la position bn, `us` = camp au trait).
+// Le bilan est pris à la fin de la fenêtre, corrigé par l'échange en cours sur la case de la dernière prise (SEE) :
+// prendre puis se faire reprendre ne compte pas comme un gain. Mat → ±99, pat → 0, variante illisible → null.
+export function lineGain(bn, pv, us, plies = 5) {
+  if (!pv || !pv.length) return null;
+  let pos = bn.pos, last = null;
   const b0 = balance(pos.g, us);
-  let best = -99;
   for (let i = 0; i < Math.min(plies, pv.length); i++) {
     const m = findMove(pos, pv[i]);
-    if (!m) break;
-    pos = play(pos, m);
-    if (!hasLegal(pos) && inCheck(pos)) return { mate: true, gain: 99 };
-    best = Math.max(best, balance(pos.g, us) - b0);
+    if (!m) return null;
+    pos = play(pos, m); last = m;
+    if (!hasLegal(pos)) return inCheck(pos) ? (pos.turn === us ? -99 : 99) : 0;
   }
-  // Les prises en suspens comptent seulement quand la variante s'arrête sur un coup adverse : on regarde la reprise.
-  return { mate: false, gain: best };
+  let g = balance(pos.g, us) - b0;
+  if (last && last.cap) { const s = see(pos, last.to); g += pos.turn === us ? s : -s; }
+  return g;
 }
-export function forcedGain(an, us, need = 2, maxReplies = 8) {
-  if (an.status) return an.status === 'mate' ? 99 : -99;
+// Gain matériel sûr d'un coup sans variante : minimax à 3 demi-coups (notre coup, chaque réponse, notre meilleure
+// prise évaluée par SEE ou un mat en 1). null si l'adversaire a trop de réponses pour le budget.
+export function staticGain(an, m, us, maxReplies = 40) {
+  if (an.status) return an.status === 'mate' ? 99 : 0;
   const replies = an.legal;
   if (replies.length > maxReplies) return null;
+  const first = capVal(m);
   let worst = 99;
   for (const r of replies) {
     const p2 = play(an.pos, r);
-    const lost = r.cap ? VALUE[typeOf(r.cap)] : 0;
-    let best = -lost;
-    for (const m of legalMoves(p2)) {
-      if (!m.cap) continue;
-      const g = seeMove(p2, m) - lost;
-      if (g > best) best = g;
-    }
+    let best = 0;
     if (hasMateIn1(p2)) best = 99;
-    worst = Math.min(worst, best);
-    if (worst < need) return worst;
+    else for (const x of legalMoves(p2)) if (x.cap || x.promo) best = Math.max(best, seeMove(p2, x));
+    worst = Math.min(worst, best >= 99 ? 99 : first - capVal(r) + best);
+    if (worst <= 0) break;
   }
   return worst;
 }
 
+// Pire boîte du défenseur après chacune de ses réponses (position an, défenseur au trait), ou null s'il n'a aucun coup.
+export function worstBoxAfter(an, def) {
+  if (!an.legal.length) return null;
+  let w = 0;
+  for (const r of an.legal) w = Math.max(w, box(play(an.pos, r).g, def).size);
+  return w;
+}
+
 export {
-  F, R, name, colorOf, typeOf, other, cheb, manh, edge, VALUE, KING_N, RAY, SLIDE, DIRS, dirOf, between,
+  F, R, name, colorOf, typeOf, other, cheb, manh, edge, knightJump, VALUE, KING_N, RAY, SLIDE, DIRS, dirOf, between,
   attackSet, pieceAttacks, attacked, attackersOf, kingOf, inCheck, units, legalMoves, hasLegal, play, findMove, sanOf, gridAfter,
 };

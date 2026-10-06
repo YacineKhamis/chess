@@ -3,7 +3,7 @@
 // d'où elle atteint la case de mat par une ligne libre, sans donner échec. Vérification : V.mate({ n }).
 import { Chess } from '../../vendor/chess.js';
 import { V } from '../drill/verify.js';
-import { int, pick, shift, sqAt, fileOf, rankOf, between, fenFrom, knightTargets, kingTargets, FILES } from '../drill/geom.js';
+import { int, pick, shift, sqAt, rankOf, between, fenFrom, knightTargets, kingTargets } from '../drill/geom.js';
 import { addNoise, attacksFrom, isAttacked, unitsFor } from '../drill/noise.js';
 
 const box = sq => [sq, ...kingTargets(sq)];
@@ -34,8 +34,9 @@ function whiteCastle(rng, m, { file = int(rng, 0, 7), p = 0.7 } = {}) {
   for (const df of [-1, 0, 1]) { const s = sqAt(file + df, 1); if (s && !m[s] && rng() < p) m[s] = 'P'; }
   return K;
 }
-// n du mat selon le niveau (but « mat en n » qui change d'un niveau à l'autre).
-const mateN = levels => st => levels[st.level]?.n ?? st.ref ?? 1;
+// n du mat selon le palier : le but « mat en n » change d'un palier à l'autre (mat en 1, puis mat en 2).
+// goal.n est alors une fonction du palier, résolue par le cœur (voir goalN dans drill/goals.js).
+const mateN = levels => level => levels[level]?.n ?? 1;
 
 const SHARED = { track: 'images', phase: 'A', oracle: 'engine', family: 'mate-pic', userSide: 'w', flip: true,
   s0: { allowCaptures: true }, yardstick: 'mate-n' };
@@ -56,7 +57,7 @@ function couloir1(rng, L, sub) {
   const d = dress(rng, m, foot, L);
   const fen = d && finish(d);
   if (!fen) return null;
-  return { fen, key: H + to, roles: { piece: H, to, king: k, shell, line: between(to, k) } };
+  return { fen, key: H + to, roles: { piece: H, to, king: k, targets: [k], shell, line: between(to, k) } };
 }
 // L3, mat en 2 : un défenseur noir (tour, parfois dame) garde la 8e rangée ; deux pièces lourdes blanches
 // doublées sur une colonne. La première attaque la case de mat, le défenseur doit prendre, la seconde reprend
@@ -82,7 +83,7 @@ function couloir2(rng, L, sub) {
   const d = dress(rng, m, foot, L);
   const fen = d && finish(d);
   if (!fen) return null;
-  return { fen, key: front + to, roles: { piece: front, to, king: k, defender: D, second: back, shell, line: between(to, k) } };
+  return { fen, key: front + to, roles: { piece: front, to, king: k, targets: [k], defender: D, second: back, shell, line: between(to, k) } };
 }
 const COULOIR = [
   { label: 'Mat en 1', n: 1, gen: couloir1, noise: 0, tries: 60 },
@@ -97,14 +98,16 @@ function etouffe1(rng, L, sub) {
   const m = { h8: 'k', g8: sub === 'cavalier' ? 'n' : 'r', g7: 'p', h7: 'p' };
   const n = pick(rng, knightTargets('f7').filter(s => !m[s]));
   m[n] = 'N';
+  // Roi blanc sur les trois premières rangées, avec parfois ses pions devant lui.
   const K = pick(rng, files(() => true).flatMap(f => [0, 1, 2].map(r => sqAt(f, r))).filter(s => !m[s]));
   m[K] = 'K';
+  for (const df of [-1, 0, 1]) { const s = shift(K, df, 1); if (s && rankOf(s) <= 2 && !m[s] && rng() < 0.5) m[s] = 'P'; }
   const foot = new Set([...box('h8'), 'f7', 'f8', 'f6', 'g6', n, ...knightTargets('f7'), ...box(K)]);
   const d = dress(rng, m, foot, L);
   if (!d || isAttacked(d, 'f7', 'b')) return null;
   const fen = finish(d);
   if (!fen) return null;
-  return { fen, key: n + 'f7', roles: { piece: n, to: 'f7', king: 'h8', blockers: ['g8', 'g7', 'h7'] } };
+  return { fen, key: n + 'f7', roles: { piece: n, to: 'f7', king: 'h8', targets: ['h8'], blockers: ['g8', 'g7', 'h7'] } };
 }
 // L3, « le legs de Philidor », mat en 2 : cavalier h6, dame sur la diagonale a2–g8, tour noire sur la 8e rangée.
 // Dg8+ ! Txg8 (le roi ne peut pas prendre : le cavalier garde g8), Cf7 mat.
@@ -122,7 +125,7 @@ function etouffe2(rng, L) {
   const d = dress(rng, m, foot, L);
   const fen = d && finish(d);
   if (!fen) return null;
-  return { fen, key: Q + 'g8', roles: { piece: Q, to: 'g8', king: 'h8', knight: 'h6', mate: 'f7', defender: R, blockers: ['g7', 'h7'] } };
+  return { fen, key: Q + 'g8', roles: { piece: Q, to: 'g8', king: 'h8', targets: ['h8'], knight: 'h6', mate: 'f7', defender: R, blockers: ['g7', 'h7'] } };
 }
 const ETOUFFE = [
   { label: 'Mat en 1', n: 1, gen: etouffe1, noise: 0, tries: 60 },
@@ -132,22 +135,28 @@ const ETOUFFE = [
 
 // ---------- I3 · Batterie dame-fou sur h7 ----------
 // Roi noir g8, tour f8, pions f7 g7 (et h7 une fois sur deux : la clé est alors Dxh7). Fou blanc sur la
-// diagonale b1–h7, chemin libre ; la dame blanche rejoint h7 par une autre ligne libre.
+// diagonale b1–h7, chemin libre. La dame rejoint h7 soit par la colonne h, soit en batterie devant le fou,
+// sur la même diagonale (le fou la soutient dès qu'elle est partie).
 function dameFou(rng, L, sub) {
   const m = { g8: 'k', f8: 'r', f7: 'p', g7: 'p' };
   if (sub === 'pion-h7') m.h7 = 'p';
-  const B = pick(rng, ['b1', 'c2', 'd3', 'e4', 'f5']);
+  const diag = ['b1', 'c2', 'd3', 'e4', 'f5', 'g6'];
+  const battery = rng() < 0.5;
+  const bi = int(rng, 0, battery ? 3 : 4), B = diag[bi];
   m[B] = 'B';
-  const K = whiteCastle(rng, m, { file: 6 });
+  const K = whiteCastle(rng, m, { file: int(rng, 5, 7) });
   if (!K || between(B, 'h7').some(s => m[s])) return null;
-  const Q = pick(rng, attacksFrom(m, 'h7', 'Q').filter(s => !m[s] && s !== 'h8' && !between(B, 'h7').includes(s)));
+  // Dame : devant le fou sur la diagonale (pas en g6, où le pion f7 la prendrait), ou sur la colonne h.
+  const origins = battery ? diag.slice(bi + 1, 5) : attacksFrom(m, 'h7', 'Q').filter(s => s[0] === 'h' && s !== 'h8');
+  const Q = pick(rng, origins.filter(s => !m[s]));
   if (!Q) return null;
   m[Q] = 'Q';
+  if (isAttacked(m, Q, 'b')) return null;
   const foot = new Set([...box('g8'), 'h7', B, Q, ...between(B, 'h7'), ...between(Q, 'h7'), ...box(K)]);
   const d = dress(rng, m, foot, L);
   const fen = d && finish(d);
   if (!fen) return null;
-  return { fen, key: Q + 'h7', roles: { piece: Q, to: 'h7', king: 'g8', support: B, line: between(B, 'h7') } };
+  return { fen, key: Q + 'h7', roles: { piece: Q, to: 'h7', king: 'g8', targets: ['g8'], support: B, line: between(B, 'h7') } };
 }
 
 export default [

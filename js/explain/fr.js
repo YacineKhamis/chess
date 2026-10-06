@@ -17,6 +17,12 @@ export const king = c => `le roi ${COLOR[c].m}`;                                
 export const side = c => (c === 'w' ? 'les Blancs' : 'les Noirs');
 export const subj = t => SUBJ[gender(t)];                                           // il / elle
 export const obj = t => ART[gender(t)];                                             // le / la (pronom complément)
+// Pronom complément élidé devant une voyelle : « la protéger », « l’attaquer », « le prend ».
+export const pron = (t, verb) => (/^[aeiouyéèêh]/i.test(verb) ? `l’${verb}` : `${obj(t)} ${verb}`);
+export const du = c => `du roi ${COLOR[c].m}`;                                      // du roi noir
+export const au = c => `au roi ${COLOR[c].m}`;                                      // au roi noir
+// Nom d'une pièce adverse : « le roi noir », « le fou noir ».
+export const who = (t, c) => (t === 'k' ? king(c) : theirs(t, c));
 export const agree = (w, t) => (gender(t) === 'f' ? PART[w] || w + 'e' : w);
 export const alone = t => `${ART[gender(t)]} ${pname(t)} seul${gender(t) === 'f' ? 'e' : ''}`; // la tour seule
 
@@ -43,3 +49,11 @@ export function finish(s) {
 }
 // Longueur visible (sans les marques de gras).
 export const visible = s => String(s).replace(/\*\*/g, '').length;
+// Évaluation lisible du point de vue du joueur : « +3,1 », « −0,4 », « mat en 3 », « mat contre toi en 2 ».
+export function evalText(v) {
+  if (v == null || !Number.isFinite(v)) return null;
+  if (v >= 9000) return `mat en ${Math.round((10000 - v) / 10)}`;
+  if (v <= -9000) return `mat contre toi en ${Math.round((10000 + v) / 10)}`;
+  const x = Math.round(v / 10) / 10;
+  return (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(1).replace('.', ',');
+}
