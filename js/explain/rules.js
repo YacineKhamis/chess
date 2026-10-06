@@ -272,7 +272,7 @@ rule({ id: 'passed-push', run(c) {
   for (let r = R(m.to) + dir; dir > 0 ? r <= last : r >= last; r += dir) path.push(r * 8 + F(m.to));
   const steps = path.length, K = c.an.king(c.def), Q = last * 8 + F(m.to);
   // Règle du carré : le roi adverse (au trait) atteint-il la case de promotion à temps ?
-  const out = X.bare(c) && c.an.kingOnly && path.every(s => !c.an.g[s]) && cheb(K, Q) - 1 > steps - 1 && cheb(K, m.to) > 1;
+  const out = X.bare(c) && c.an.kingOnly && path.every(s => !c.an.g[s]) && cheb(K, Q) > steps + 1 && cheb(K, m.to) > 1; // le roi au trait rattrape s'il est à steps + 1 cases ou moins
   return { tags: out ? ['passed-push', 'out-of-square'] : ['passed-push'], idea: 'Un pion passé ne demande qu’à avancer.',
     say: [out ? `Ton pion passé avance : ${X.K(c)} est hors du carré, il ne peut plus le rattraper.` : 'Ton pion passé avance vers la promotion.'],
     viz: { marks: marks([Q], 'mark-key') } };
@@ -542,7 +542,7 @@ rule({ id: 'parry-threat', aliases: ['luft'], run(c) {
   if (!thr.length) return null;
   if (captures(c.an).some(x => typeOf(x.cap) !== 'k' && seeMove(c.an.pos, x) >= 2)) return null;
   const T = thr[0], t = typeOf(T.cap), m = c.m;
-  const how = m.from === T.to ? `${subj(t)} se met à l’abri` : m.cap && m.to === T.from ? 'tu prends la pièce qui attaquait'
+  const how = m.cap && m.to === T.from ? 'tu prends la pièce qui attaquait' : m.from === T.to ? `${subj(t)} se met à l’abri`
     : pieceAttacks(c.an.g, m.to)[T.to] ? `tu ${pron(t, 'protèges')}` : between(T.from, T.to).includes(m.to) ? 'tu bloques la ligne' : 'ton coup pare la menace';
   return { tags: ['parry-threat', 'parry-material'], idea: 'Que menace son dernier coup ?',
     say: [`${them} menaçaient de prendre ${mine(t)} en ${name(T.to)} : ${how}.`],

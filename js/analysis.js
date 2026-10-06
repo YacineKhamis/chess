@@ -101,7 +101,8 @@ export function inSquare(pawnSq, pawnColor, kingSq, toMove) {
   const start = pawnColor === 'w' ? 1 : 6;
   if (r === start) r += dir; // le premier pas double compte comme un seul coup
   const promo = pawnColor === 'w' ? 7 : 0;
-  const steps = Math.abs(promo - r) - (toMove === pawnColor ? 1 : 0);
+  // n coups pour aller à dame ; le roi au trait a un coup de plus (il peut prendre la nouvelle dame).
+  const steps = Math.abs(promo - r) + (toMove === pawnColor ? 0 : 1);
   return Math.max(Math.abs(fileOf(kingSq) - fileOf(pawnSq)), Math.abs(rankOf(kingSq) - promo)) <= steps;
 }
 

@@ -48,6 +48,11 @@ import './families/tactic-skewer.js';
 import './families/tactic-pin.js';
 import './families/mate-pic.js';
 import './families/parry.js';
+import './families/kpk.js';
+import './families/kpk-def.js';
+import './families/kqkp.js';
+import './families/krkp.js';
+import './families/rooks.js';
 
 export { FAMILIES, RULES, REASONS, rule, reason, family, stats };
 

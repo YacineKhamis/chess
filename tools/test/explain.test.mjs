@@ -158,7 +158,18 @@ test('fixtures §6.2-6 (KRK, KQK)', () => {
   verify('8/8/8/6Q1/3K4/8/5k2/8 w - - 0 1', 'g5g4', e, 'Dg4');
 });
 
-test.todo('fixtures du §6.2-6 laissées à la famille suivante : pont de Lucena, 3e rangée de Philidor, case clé KPK');
+// Détail et vérifications indépendantes : tools/test/explain-endgames.test.mjs.
+test('fixtures §6.2-6 des finales avec pion : pont de Lucena, 3e rangée de Philidor, case clé KPK', () => {
+  let e = explainMove({ fen: '3K4/3P4/6k1/8/8/8/2r5/4R3 w - - 0 1', move: 'e1e4', family: 'lucena' });
+  assert.equal(e.debug.primary, 'lucena-bridge', e.text.join(' '));
+  assert.match(plain(e.text[0]), /Tu construis le pont : ta tour se place sur la 4e rangée/);
+  e = explainMove({ fen: '3k4/R7/8/1KP2r2/8/8/8/8 b - - 0 1', move: 'f5f6', family: 'philidor' });
+  assert.equal(e.debug.primary, 'philidor-third', e.text.join(' '));
+  assert.match(plain(e.text[0]), /ta tour garde la 6e rangée \(ta 3e\)/);
+  e = explainMove({ fen: '8/8/8/5k2/8/4K3/4P3/8 w - - 0 1', move: 'e3d4', family: 'kpk', tb });
+  assert.equal(e.debug.primary, 'key-square', e.text.join(' '));
+  assert.match(plain(e.text[0]), /case clé d4/);
+});
 
 // =====================================================================================================
 // 2. Motifs tactiques, images de mat, vigilance
