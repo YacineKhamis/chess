@@ -77,7 +77,11 @@ export function mount(root) {
     current = id;
     suite.hidden = true;
     setText(step, `Séance · ${se.i + 1}/${se.items.length} · ${KIND[it.kind] || ''} · partie ${Math.min(se.done + 1, it.n)}/${it.n}`);
+    // Dans un bloc « en cours », une partie sur quatre repart d'une de tes erreurs passées.
+    const errs = store.drills?.[id]?.err || [];
+    const replayItem = it.kind === 'focus' && errs.length && se.done % 4 === 3 ? errs[errs.length - 1] : null;
     child = mountDrill(body, id, {
+      replayItem,
       mystery: it.kind === 'melange',
       onDone: () => {
         se.done++;

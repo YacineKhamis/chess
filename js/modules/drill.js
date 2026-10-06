@@ -6,7 +6,7 @@ import { Chess } from '../../vendor/chess.js';
 import { load, save, logActivity, h, $, setText, fr, frSan, uci as toMove, yourPiece } from '../util.js';
 import { kingZone, other } from '../analysis.js';
 import { DRILLS, TRACKS, REGISTRY } from '../drills/index.js';
-import { produce } from '../drill/produce.js';
+import { produce, replay } from '../drill/produce.js';
 import { Attempt } from '../drill/attempt.js';
 import { slackMate, slackPromo } from '../drill/goals.js';
 import * as P from '../progress.js';
@@ -33,7 +33,7 @@ export function setupFor(spec, r, rng = Math.random) {
   return { level, colour };
 }
 
-export function mount(root, id, { tabs = null, onDone = null, mystery = false } = {}) {
+export function mount(root, id, { tabs = null, onDone = null, mystery = false, replayItem = null } = {}) {
   const spec = DRILLS[id];
   if (!spec) {
     root.replaceChildren(h(`<section class="home"><p>Cet exercice n’existe pas (encore).</p><p><a href="#/parcours">Retour au parcours</a></p></section>`));
@@ -155,15 +155,36 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false } 
     renderHeader(s.level ?? 0); renderStats();
     show(['hint', 'retry', 'new']);
     board.setDests(destsOf(attempt.chess));
-    setVerdict('turn', `${opts.retry ? 'On reprend. ' : ''}${attempt.goalText()} Tu as les ${attempt.userColor === 'w' ? 'Blancs' : 'Noirs'}.`);
+    setVerdict('turn', `${opts.retry ? 'On reprend. ' : ''}${opts.note ? opts.note + ' ' : ''}${attempt.goalText()} Tu as les ${attempt.userColor === 'w' ? 'Blancs' : 'Noirs'}.`);
     renderMeta(); hintLabel();
     attempt.think();
+  }
+  // Une de tes positions difficiles revient, avec une symétrie neuve (spec §1.5).
+  async function prepareReplay(item) {
+    const s = replay(spec, item, ctx.rng, setupFor(spec, rec()).colour);
+    if (spec.oracle === 'tb') {
+      const p = ctx.tb.probe(s.fen);
+      if (!p) return null;
+      s.ref = p.win ? p.dist : null;
+    } else {
+      await ctx.engine.newGame();
+      const [l] = await ctx.engine.analyse(s.fen, { movetime: 800 });
+      if (!l) return null;
+      s.E0 = l.cp; s.ref = spec.goal.kind === 'mate' && l.mate > 0 ? l.mate : null;
+    }
+    s.fromErr = item.fen;
+    return s;
   }
   async function fresh({ same = false } = {}) {
     abandon();
     setVerdict('wait', 'Préparation de la position…');
     show([]); board.setDests(null);
     let s;
+    if (replayItem && !same) {
+      s = await prepareReplay(replayItem);
+      replayItem = null;
+      if (s) return begin(s, { fromErr: s.fromErr, note: 'Ta position difficile revient… en miroir ou en couleurs inversées.' });
+    }
     if (nextP && !same) { s = await nextP; nextP = null; }
     else s = await prepare(same && start ? { level: start.level, colour: start.userColor } : setupFor(spec, rec()), same && start ? { sub: start.sub } : {});
     await begin(s);
