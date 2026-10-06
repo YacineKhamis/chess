@@ -83,7 +83,7 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
   function renderStats() {
     const r = rec();
     if (!r || !r.n) { setText($('.stats', view), 'Aucun essai pour l’instant.'); return; }
-    let s = `${plural(r.n, 'essai')}, ${plural(r.ok, 'réussite')}, dont ${plural(r.clean, 'propre')}.`;
+    let s = r.ok ? `${plural(r.n, 'essai')}, ${plural(r.ok, 'réussite')}${r.clean ? `, dont ${plural(r.clean, 'propre')}` : ''}.` : `${plural(r.n, 'essai')}, pas encore de réussite.`;
     if (KNOWN.includes(r.st) && r.due) s += ` Prochain contrôle : ${P.dueLabel(r.due, Date.now())}.`;
     setText($('.stats', view), s);
   }
