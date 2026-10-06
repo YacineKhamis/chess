@@ -10,7 +10,7 @@ const box = sq => [sq, ...kingTargets(sq)];
 const retry = (n, fn) => { for (let i = 0; i < n; i++) { const c = fn(); if (c) return c; } return null; };
 const legal = fen => { try { return new Chess(fen); } catch { return null; } };
 const files = pred => [0, 1, 2, 3, 4, 5, 6, 7].filter(pred);
-const mates = c => c.moves({ verbose: true }).filter(mv => { c.move(mv); const m = c.isCheckmate(); c.undo(); return m; });
+const mates = moves => moves.filter(mv => mv.san.endsWith('#'));   // chess.js marque le mat dans le SAN
 
 // Roi blanc sur la 1re rangée (colonnes b–g) derrière ses trois pions intacts ; roi noir sur la 8e rangée
 // avec 0 à 3 pions devant lui ; une pièce lourde noire (tour, ou dame) sur une colonne libre jusqu'à la
@@ -41,11 +41,12 @@ function genParer(rng, L, sub) {
   }
   const fen = fenFrom(d, 'w');
   const c = legal(fen);
-  if (!c || c.isCheck() || c.isGameOver() || c.moves({ verbose: true }).some(mv => mv.captured)) return null;   // S0 sans prise
-  // Tri sans moteur : la menace est un vrai mat en 1 (coup nul des Blancs), et les Blancs n'ont pas de mat en 1.
+  if (!c || c.isCheck() || c.isGameOver()) return null;
+  const mv = c.moves({ verbose: true });
+  if (mv.some(x => x.captured) || mates(mv).length) return null;   // S0 sans prise ; pas de mat en 1 pour les Blancs
+  // Tri sans moteur : la menace est un vrai mat en 1 (coup nul des Blancs).
   const n = legal(nullMoveFen(fen));
-  if (!n || n.isCheck() || !mates(n).some(mv => mv.from === H && mv.to === to)) return null;
-  if (mates(c).length) return null;
+  if (!n || n.isCheck() || !mates(n.moves({ verbose: true })).some(x => x.from === H && x.to === to)) return null;
   return { fen, roles: { threat: H + to, attacker: H, king: K, file: [H, ...between(H, to), to], shell, defender: R } };
 }
 
