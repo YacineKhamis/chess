@@ -78,7 +78,7 @@ js/modules/             écrans : exercice, parcours, séance, menace, puzzles
 data/                   exercices (JSON) et tables de finales (data/tb/*.bin)
 tools/build_tb.mjs      construction des tables de finales
 tools/build_puzzles.py  extraction des puzzles Lichess
-tools/test/             tests (node --test tools/test/)
+tools/test/             tests (node --test 'tools/test/*.test.mjs')
 vendor/                 chess.js et Stockfish (copies locales)
 docs/conception-v2.md   conception détaillée du parcours (en anglais)
 ```
@@ -87,7 +87,7 @@ Format d’un puzzle (identique à Lichess) : `fen` est la position avant le cou
 
 ## Tests
 
-Node 22 suffit, sans installation : `node --test tools/test/`. `QUICK=1` pour une version rapide, `FULL=1` pour la version complète, `ONLY=<id>` pour un seul exercice. Stockfish tourne dans Node avec la même copie que le site.
+Node 22 suffit, sans installation : `node --test 'tools/test/*.test.mjs'`. `QUICK=1` pour une version rapide, `FULL=1` pour la version complète, `ONLY=<id>` pour un seul exercice. Stockfish tourne dans Node avec la même copie que le site.
 
 ## Licences
 

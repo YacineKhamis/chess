@@ -14,4 +14,4 @@ jobs:
         with:
           node-version: "22"
       - name: Tests rapides (Stockfish tourne dans Node, aucune installation)
-        run: QUICK=1 node --test --test-concurrency=2 tools/test/
+        run: QUICK=1 node --test --test-concurrency=2 'tools/test/*.test.mjs'
