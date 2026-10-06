@@ -267,8 +267,10 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
       if (r.step === 1) { setExplain([r.idea || r.text?.[0]]); board.setViz({ ...r.viz, arrows: [] }); }
       if (r.step === 2) { setExplain([r.idea, `Joue ${yourPiece(piece.type)}.`]); board.setViz({ ...r.viz, arrows: [], marks: { ...(r.viz?.marks || {}), [from]: 'mark-hint' } }); }
       if (r.step === 3) {
-        const extra = r.count ? [`${plural(r.count, 'coup gagne', 'coups gagnent')} ici.`] : [];
-        setExplain([...(r.text || []), ...(spec.oracle === 'tb' && spec.goal.kind !== 'hold' ? extra : [])]);
+        // Le nombre de bons coups n'éclaire que lorsqu'il est petit (tables exactes) : « le seul coup », « 2 coups ».
+        const good = spec.goal.kind === 'hold' ? 'tient' : 'gagne';
+        const extra = r.count === 1 ? [`C’est le seul coup qui ${good}.`] : r.count && r.count <= 3 ? [`${r.count} coups ${good === 'tient' ? 'tiennent' : 'gagnent'} ici.`] : [];
+        setExplain([...(r.text || []), ...(spec.oracle === 'tb' ? extra : [])]);
         board.setViz({ ...r.viz, arrows: [...(r.viz?.arrows || []), { from, to, cls: 'hint' }] });
       }
       return;
