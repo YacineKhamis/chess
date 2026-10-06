@@ -1,0 +1,104 @@
+/* ---------- Parcours, séance et écran d'exercice ---------- */
+.crumbs { color: var(--muted); font-size: .95rem; }
+.crumbs a { color: inherit; text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
+
+.levelrow { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .95rem; color: var(--muted); }
+.levelrow .lvl { font-weight: 700; color: var(--ink); }
+.levelrow .streak { letter-spacing: .08em; }
+.gate {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1.5px dashed var(--line);
+  color: var(--muted);
+  font-size: .95rem;
+}
+.explain:empty { display: none; }
+.explain { display: grid; gap: 6px; }
+.explain p { margin: 0; font-weight: 400; }
+.explain p:first-child { font-weight: 700; }
+.toggle { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: .95rem; cursor: pointer; }
+.toggle input { width: 20px; height: 20px; accent-color: var(--sq-dark); }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+a.btn[hidden] { display: none; }
+
+/* Parcours */
+.parcours { max-width: 680px; margin: 0 auto; display: grid; gap: 18px; }
+.parcours h1 { font-size: clamp(2rem, 7vw, 2.8rem); font-weight: 800; letter-spacing: -0.02em; }
+.lead { margin: 0; color: var(--muted); }
+.lead a { color: var(--ink); font-weight: 700; }
+.track { border-top: 2px solid var(--ink); padding-top: 14px; }
+.track h2 { font-size: 1.4rem; font-weight: 800; }
+.track-desc { margin: 4px 0 10px; color: var(--muted); }
+.drills { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.drill-card {
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  text-decoration: none;
+}
+.drill-card:hover { border-color: var(--ink); }
+.drill-card .sym { grid-row: 1 / 3; font-size: 1.4rem; line-height: 1.2; color: var(--sq-dark); }
+.drill-card .drill-name { font-weight: 700; }
+.drill-card .drill-name em {
+  font-style: normal;
+  font-size: .8rem;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #1b2a2f;
+  vertical-align: 2px;
+}
+.drill-card .drill-sub { color: var(--muted); font-size: .92rem; letter-spacing: .02em; }
+.drill-card.here { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.drill-card.dim { opacity: .62; }
+.drill-card[data-st="acq"] .sym, .drill-card[data-st="mast"] .sym { color: var(--ok); }
+.drill-card[data-st="rusty"] .sym { color: var(--ko); }
+@media (prefers-color-scheme: dark) { .drill-card .sym { color: var(--sq-light); } }
+
+.howto { color: var(--muted); }
+.howto summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+.howto ul { margin: 8px 0 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.howto strong { color: var(--ink); }
+
+/* Accueil : séance du jour */
+.seance-card {
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 24px;
+  background: var(--surface);
+}
+.seance-card h2 { font-size: 1.35rem; font-weight: 800; }
+.seance-card p { margin: 8px 0 0; }
+.seance-items { list-style: none; margin: 10px 0 4px; padding: 0; display: grid; gap: 6px; }
+.seance-items .sym { display: inline-block; width: 1.4em; color: var(--accent); font-weight: 700; }
+.seance-card .actions { margin-top: 12px; }
+.checklist .train {
+  margin-left: 8px;
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* Séance en cours */
+.seance { display: grid; gap: 14px; }
+.seance-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.seance-step { font-weight: 700; flex: 1; }
+.seance-bar .btn[hidden] { display: none; }
+
+/* Sur téléphone : fil d'Ariane et palier au-dessus de l'échiquier, le reste dessous */
+@media (max-width: 899px) {
+  .trainer .crumbs { order: 0; }
+  .trainer .levelrow { order: 1; }
+  .trainer .gate { order: 4; }
+  .trainer .toggle { order: 6; }
+}
