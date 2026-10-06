@@ -2,20 +2,42 @@
 // jouée jusqu'au bout. Les Noirs menacent un mat du couloir ; l'utilisateur doit le voir et le parer.
 import { Chess } from '../../vendor/chess.js';
 import { V } from '../drill/verify.js';
-import { int, pick, sqAt, between, fenFrom, kingTargets } from '../drill/geom.js';
-import { addNoise, isAttacked, unitsFor } from '../drill/noise.js';
-import { nullMoveFen } from '../util.js';
+import { int, pick, sqAt, rankOf, between, fenFrom, kingTargets, ALL_SQUARES } from '../drill/geom.js';
+import { addNoise, attacksFrom, isAttacked, isWhite, unitsFor } from '../drill/noise.js';
 
 const box = sq => [sq, ...kingTargets(sq)];
 const retry = (n, fn) => { for (let i = 0; i < n; i++) { const c = fn(); if (c) return c; } return null; };
 const legal = fen => { try { return new Chess(fen); } catch { return null; } };
 const files = pred => [0, 1, 2, 3, 4, 5, 6, 7].filter(pred);
-const mates = moves => moves.filter(mv => mv.san.endsWith('#'));   // chess.js marque le mat dans le SAN
+
+// Les Blancs ont-ils un mat en 1 ? Seuls les échecs de leur pièce lourde peuvent en être un : le bruit
+// n'attaque pas les abords du roi noir. (Le moteur vérifie de toute façon que l'utilisateur n'a pas de mat.)
+function whiteMates(c, m, R, k) {
+  for (const t of attacksFrom(m, R)) {
+    if (m[t]) continue;
+    const after = { ...m, [t]: m[R] };
+    delete after[R];
+    if (!attacksFrom(after, t).includes(k)) continue;
+    c.move({ from: R, to: t });
+    const mate = c.isCheckmate();
+    c.undo();
+    if (mate) return true;
+  }
+  return false;
+}
+// La menace H→to est-elle un mat (si les Blancs passaient leur tour) ? Le roi blanc est enfermé par ses trois pions ;
+// le bruit n'atteint pas la 1re rangée : seule la pièce lourde blanche peut prendre en `to` ou s'interposer.
+function threatMates(m, H, to, R, K) {
+  const after = { ...m, [to]: m[H] };
+  delete after[H];
+  const cover = attacksFrom(after, R);
+  return !cover.includes(to) && !between(to, K).some(s => cover.includes(s));
+}
 
 // Roi blanc sur la 1re rangée (colonnes b–g) derrière ses trois pions intacts ; roi noir sur la 8e rangée
 // avec 0 à 3 pions devant lui ; une pièce lourde noire (tour, ou dame) sur une colonne libre jusqu'à la
 // 1re rangée, à deux colonnes au moins du roi blanc ; une tour blanche (une dame contre une dame) entre la
-// 3e et la 7e rangée.
+// 3e et la 7e rangée, choisie parmi les cases où elle n'est pas attaquée et n'attaque rien.
 function genParer(rng, L, sub) {
   const kf = int(rng, 1, 6), K = sqAt(kf, 0), m = { [K]: 'K' };
   const shell = [-1, 0, 1].map(df => sqAt(kf + df, 1));
@@ -24,15 +46,19 @@ function genParer(rng, L, sub) {
   m[k] = 'k';
   for (const df of [-1, 0, 1]) { const s = sqAt(bf + df, 6); if (s && rng() < 0.6) m[s] = 'p'; }
   const af = pick(rng, files(f => Math.abs(f - kf) >= 2));
-  const H = sqAt(af, int(rng, 2, 6)), to = sqAt(af, 0);
-  if (m[H] || between(H, to).some(s => m[s])) return null;
+  const H = sqAt(af, int(rng, 2, 6)), to = sqAt(af, 0), path = between(H, to);
+  if (m[H] || path.some(s => m[s])) return null;
   m[H] = sub === 'dame' ? 'q' : 'r';
   // Pièce blanche de même valeur que l'attaquant noir : sinon les Blancs sont perdus d'avance (dame contre tour).
-  const R = sqAt(int(rng, 0, 7), int(rng, 2, 6));
-  if (m[R]) return null;
-  m[R] = sub === 'dame' ? 'Q' : 'R';
-  if (isAttacked(m, R, 'b') || isAttacked(m, H, 'w')) return null;
-  const foot = new Set([...files(() => true).map(f => sqAt(f, 0)), ...between(H, to), H, R, ...box(K), ...box(k), ...shell]);
+  const W = sub === 'dame' ? 'Q' : 'R';
+  const R = pick(rng, ALL_SQUARES.filter(s => !m[s] && rankOf(s) >= 2 && rankOf(s) <= 6 && !path.includes(s) && (() => {
+    const t = { ...m, [s]: W };
+    return !isAttacked(t, s, 'b') && !isAttacked(t, H, 'w') && !attacksFrom(t, s).some(x => t[x] && !isWhite(t[x]));
+  })()));
+  if (!R) return null;
+  m[R] = W;
+  if (Object.keys(m).some(s => isWhite(m[s]) && attacksFrom(m, s).some(x => m[x] && !isWhite(m[x])))) return null; // S0 : pas de prise
+  const foot = new Set([...files(() => true).map(f => sqAt(f, 0)), ...path, H, R, ...box(K), ...box(k), ...shell]);
   let d = m;
   if (L.noise) {
     const r = addNoise(rng, m, foot, unitsFor(rng, L.noise));
@@ -41,13 +67,8 @@ function genParer(rng, L, sub) {
   }
   const fen = fenFrom(d, 'w');
   const c = legal(fen);
-  if (!c || c.isCheck() || c.isGameOver()) return null;
-  const mv = c.moves({ verbose: true });
-  if (mv.some(x => x.captured) || mates(mv).length) return null;   // S0 sans prise ; pas de mat en 1 pour les Blancs
-  // Tri sans moteur : la menace est un vrai mat en 1 (coup nul des Blancs).
-  const n = legal(nullMoveFen(fen));
-  if (!n || n.isCheck() || !mates(n.moves({ verbose: true })).some(x => x.from === H && x.to === to)) return null;
-  return { fen, roles: { threat: H + to, attacker: H, king: K, file: [H, ...between(H, to), to], shell, defender: R } };
+  if (!c || c.isCheck() || whiteMates(c, d, R, k) || !threatMates(d, H, to, R, K)) return null;
+  return { fen, roles: { threat: H + to, attacker: H, line: [...path, to], targets: [K], king: K, file: [H, ...path, to], shell, defender: R } };
 }
 
 export default [

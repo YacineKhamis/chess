@@ -45,15 +45,30 @@ export function dress(rng, m, foot, L, { ballast = L.ballast, pairs = L.pairs } 
   return out;
 }
 
-// Contrôles communs : position légale, Blancs au trait sans échec, roi noir pas en échec, au moins 2 coups.
-function finish(m) {
+// Contrôles communs : position légale, Blancs au trait sans échec, roi noir pas en échec, au moins 2 coups,
+// et coup clé légal (une pièce du motif peut être clouée sur son propre roi : le cavalier par la dame visée).
+function finish(m, key) {
   const fen = fenFrom(m, 'w');
   const c = legal(fen);
   if (!c || c.isCheck() || c.moves().length < 2) return null;
   const bk = Object.keys(m).find(s => m[s] === 'k');
   if (c.isAttacked(bk, 'w')) return null;
+  if (!c.moves({ square: key.slice(0, 2), verbose: true }).some(mv => mv.to === key.slice(2, 4))) return null;
   return { fen, chess: c };
 }
+
+// Tri rapide avant V.mat : une recherche à profondeur 6 écarte les candidats où le coup clé n'est ni
+// premier avec un peu d'avance, ni deuxième tout près du premier. Elle ne remplace pas V.mat, qui reste
+// seul juge ; elle évite seulement de payer une recherche complète pour un candidat sans espoir
+// (mesuré au palier 3 du clouage : temps par position acceptée divisé par 4, 1 position bonne sur 13 perdue).
+async function quick(ctx, c) {
+  const [b, s] = await ctx.engine.analyse(c.fen, { depth: 6, multipv: 2 });
+  if (!b) return false;
+  const key = c.key.slice(0, 4), gap = s ? b.cp - s.cp : Infinity;
+  if (b.move.slice(0, 4) === key) return b.mate == null && gap >= 50;
+  return !!s && s.move.slice(0, 4) === key && gap <= 60;
+}
+const checked = (opts = {}) => async (ctx, c, level) => ((await quick(ctx, c)) ? V.mat(opts)(ctx, c, level) : null);
 
 const LEVELS = [
   { label: 'Le motif seul', ballast: 2, noise: 0, tries: 60 },
@@ -138,7 +153,7 @@ function genHanging(rng, L, sub) {
   // Leurre attaqué par une tour : tour (5) contre pièce et pion (4), on rend un pion aux Noirs.
   for (let i = 0; d && i < extra && extra <= 2; i++) d = addBlackPawn(rng, d, foot);
   if (!d) return null;
-  const f = finish(d);
+  const f = finish(d, ys + xs);
   if (!f || freeChecks(f.chess, ys + xs)) return null;
   return { fen: f.fen, key: ys + xs, roles: { piece: ys, to: xs, targets: [xs], line: line(ys, xs), decoys, gain: VALUE[X] } };
 }
@@ -165,7 +180,7 @@ function genFork(rng, L, sub) {
   const foot = new Set([...box(k), f, t, n, K]);
   const d = dress(rng, m, foot, L);
   if (!d) return null;
-  const fin = finish(d);
+  const fin = finish(d, n + f);
   if (!fin) return null;
   return { fen: fin.fen, key: n + f, roles: { piece: n, to: f, targets: [k, t], gain: VALUE[T] - 3 } };
 }
@@ -195,18 +210,32 @@ function genSkewer(rng, L, sub) {
   const foot = new Set([...box(k), ...lineSq, R, ...line(R, cs), K]);
   const d = dress(rng, m, foot, L);
   if (!d) return null;
-  const fin = finish(d);
+  const fin = finish(d, R + cs);
   if (!fin) return null;
   return { fen: fin.fen, key: R + cs, roles: { piece: R, to: cs, targets: [k, q], line: lineSq, gain: 4 } };
 }
 
 // ---------- T4 · Exploiter le clouage ----------
+// Une pièce blanche (hors `except`) peut-elle, en un coup, venir attaquer la case `target` ?
+function otherAttacker(m, target, except) {
+  for (const s of Object.keys(m)) {
+    const P = m[s];
+    if (!isWhite(P) || P === 'K' || except.includes(s)) continue;
+    const dests = P === 'P' ? [shift(s, 0, 1)].filter(t => t && !m[t]) : attacksFrom(m, s).filter(t => !m[t]);
+    for (const t of dests) {
+      const after = { ...m, [t]: P };
+      delete after[s];
+      if (attacksFrom(after, t).includes(target)) return true;
+    }
+  }
+  return false;
+}
 // Une pièce noire P (cavalier ou tour) clouée en diagonale sur son roi par un fou blanc ;
 // un pion blanc avance d'une case pour l'attaquer. P ne peut ni fuir ni prendre le pion.
 function genPin(rng, L, sub) {
   const P = sub || pick(rng, ['n', 'r']);
   const k = sqAt(int(rng, 2, 5), int(rng, 5, 7));
-  const dx = pick(rng, [-1, 1]), d1 = +(process.env.D1 || int(rng, 1, 2)), d2 = d1 + int(rng, 1, 3);
+  const dx = pick(rng, [-1, 1]), d1 = int(rng, 1, 2), d2 = d1 + int(rng, 1, 3);
   const p = shift(k, dx * d1, -d1), B = shift(k, dx * d2, -d2);
   if (!p || !B) return null;
   // Le pion vient du côté opposé à la ligne de clouage, pour ne pas la couper.
@@ -227,11 +256,13 @@ function genPin(rng, L, sub) {
   const foot = new Set([...box(k), p, B, po, push, ...pin, K, ...(guard ? [guard] : [])]);
   if (isAttacked(m, push, 'b') && !isAttacked(m, push, 'w')) return null;
   if (isAttacked(m, B, 'b')) return null;
-  let d = dress(rng, m, foot, L, { pairs: P === 'r' ? L.pairs : 0 });
+  let d = dress(rng, m, foot, L);
   // Sans pion de garde, le pion du motif donne un pion de plus aux Blancs : on rend ce pion aux Noirs.
   if (d && !guard) d = addBlackPawn(rng, d, foot);
-  if (!d) return null;
-  const fin = finish(d);
+  // Le pion est le seul à pouvoir attaquer la pièce clouée en un coup : sinon une autre pièce
+  // ferait aussi bien (deux solutions), et l'exercice ne montrerait plus « attaque avec moins cher ».
+  if (!d || otherAttacker(d, p, [B, po])) return null;
+  const fin = finish(d, po + push);
   if (!fin) return null;
   return { fen: fin.fen, key: po + push, roles: { piece: po, to: push, pinned: p, pinner: B, targets: [p], line: [B, ...pin, k], gain: 2 } };
 }
@@ -249,7 +280,7 @@ export default [
     tip: 'Avant tout, regarde ce que l’adversaire laisse sans défense. Mais une pièce protégée par un pion n’est pas un cadeau.',
     ideas: ['hanging-take'],
     generate(rng, level, sub) { return retry(300, () => genHanging(rng, this.levels[level], sub)); },
-    verify: (ctx, c, level) => V.mat({ gap: 200 })(ctx, c, level),
+    verify: checked({ gap: 200 }),
   },
   {
     ...SHARED, id: 'fourchette-cavalier', title: 'Fourchette royale du cavalier', short: 'Fourchette', family: 'tactic:fork',
@@ -259,7 +290,7 @@ export default [
     tip: 'Cherche une case d’où ton cavalier attaquerait le roi et une grosse pièce à la fois : avec échec, c’est imparable.',
     ideas: ['fork'],
     generate(rng, level, sub) { return retry(300, () => genFork(rng, this.levels[level], sub)); },
-    verify: (ctx, c, level) => V.mat()(ctx, c, level),
+    verify: checked(),
   },
   {
     ...SHARED, id: 'enfilade', title: 'Enfilade', short: 'Enfilade', family: 'tactic:skewer',
@@ -269,7 +300,7 @@ export default [
     tip: 'Roi et dame alignés : fais échec sur la ligne, le roi s’écarte et la dame derrière lui tombe.',
     ideas: ['skewer'],
     generate(rng, level, sub) { return retry(300, () => genSkewer(rng, this.levels[level], sub)); },
-    verify: (ctx, c, level) => V.mat()(ctx, c, level),
+    verify: checked(),
   },
   {
     ...SHARED, id: 'clouage', title: 'Exploiter le clouage', short: 'Clouage', family: 'tactic:pin',
@@ -279,6 +310,6 @@ export default [
     tip: 'Une pièce clouée devant son roi ne peut pas fuir : attaque-la avec moins cher qu’elle, un pion par exemple.',
     ideas: ['pin'],
     generate(rng, level, sub) { return retry(300, () => genPin(rng, this.levels[level], sub)); },
-    verify: (ctx, c, level) => V.mat()(ctx, c, level),
+    verify: checked(),
   },
 ];

@@ -189,7 +189,7 @@ export default [
       { label: 'Cachée parmi d’autres pièces', noise: [5, 8], tries: 60 },
     ],
     strata: () => ['pion-h7', 'h7-vide'],
-    tip: 'Dame et fou sur la même diagonale visent h7 : la dame mate, protégée par le fou.',
+    tip: 'Le fou vise h7 : si ta dame peut y arriver, c’est mat, la dame est protégée par le fou.',
     ideas: ['mate', 'battery'],
     generate(rng, level, sub) { return retry(300, () => dameFou(rng, this.levels[level], sub)); },
     verify: (ctx, c) => V.mate({ n: 1 })(ctx, c),

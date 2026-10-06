@@ -1,5 +1,5 @@
 // Bruit inerte (spec §3.0.3) : des pièces qui habillent la position sans toucher au motif.
-// Une unité est soit un « bélier » (pion blanc en (c, r), pion noir juste devant, r = 2…6),
+// Une unité est soit un « bélier » (pion blanc en (c, r), pion noir juste devant ; ici r = 3…5),
 // soit une « paire » (un cavalier, un fou ou une tour de chaque camp, de même type).
 // Une unité n'est gardée que si chaque nouvelle pièce : n'est pas attaquée par l'autre camp,
 // n'attaque aucune pièce adverse et n'attaque aucune case de l'empreinte du motif.
@@ -89,10 +89,10 @@ function ramSpots(m, foot, att) {
   return spots;
 }
 // Cases possibles pour chaque pièce d'une paire de type `type`. Pour garder une allure de partie,
-// chaque pièce reste dans sa moitié de l'échiquier, à une rangée près (pas de cavalier noir en a1).
+// une pièce ne se pose pas sur les deux dernières rangées de l'adversaire (pas de cavalier noir en a1).
 const pairSpots = (m, foot, att, type) => ({
-  W: ALL_SQUARES.filter(s => +s[1] <= 5 && inertAt(m, foot, att, s, type)),
-  B: ALL_SQUARES.filter(s => +s[1] >= 4 && inertAt(m, foot, att, s, type.toLowerCase())),
+  W: ALL_SQUARES.filter(s => +s[1] <= 6 && inertAt(m, foot, att, s, type)),
+  B: ALL_SQUARES.filter(s => +s[1] >= 3 && inertAt(m, foot, att, s, type.toLowerCase())),
 });
 // Une paire tirée parmi ces cases, dont les deux pièces ne s'attaquent pas l'une l'autre.
 function tryPair(rng, m, { W, B }, type) {
