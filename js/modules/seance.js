@@ -1,35 +1,11 @@
 // Séance du jour : enchaîne contrôles, exercice en cours, nouveauté et mélange (spec §4.6 et §4.7).
 import { load, save, h, $, setText } from '../util.js';
-import { DRILLS, DRILL_LIST, REGISTRY, coveredBy } from '../drills/index.js';
+import { DRILLS, REGISTRY } from '../drills/index.js';
 import * as P from '../progress.js';
 import { mount as mountDrill } from './drill.js';
 
 const KIND = { controle: 'Contrôle', reprise: 'À reprendre', focus: 'En cours', nouveau: 'Nouveau', melange: 'Mélange' };
 const KNOWN = ['acq', 'mast', 'rusty'];
-
-// Tirage pondéré d'un exercice pour le mélange : jamais deux fois le même parcours d'affilée,
-// une fois sur deux le « contraste » du précédent quand il existe.
-export function pickMelange(store, prev, rng = Math.random, now = Date.now()) {
-  const known = id => KNOWN.includes(store.drills?.[id]?.st);
-  const pool = DRILL_LIST.filter(d => (store.drills?.[d.id]?.st === 'acq' || store.drills?.[d.id]?.st === 'mast')
-    && !(coveredBy[d.id] || []).some(known));
-  if (!pool.length) return null;
-  const p = prev && DRILLS[prev];
-  if (p && rng() < 0.5) {
-    const c = (p.contrast || []).filter(id => pool.some(d => d.id === id));
-    if (c.length) return c[Math.floor(rng() * c.length)];
-  }
-  const cand = pool.filter(d => !p || d.track !== p.track || pool.length === 1);
-  const weight = d => {
-    const r = store.drills[d.id];
-    const ratio = r.due && r.lastChk ? (now - r.lastChk) / Math.max(1, r.due - r.lastChk) : 1;
-    return Math.min(3, Math.max(0.3, ratio));
-  };
-  const total = cand.reduce((s, d) => s + weight(d), 0);
-  let x = rng() * total;
-  for (const d of cand) { x -= weight(d); if (x <= 0) return d.id; }
-  return cand.at(-1).id;
-}
 
 export function mount(root) {
   const store = load();
@@ -72,7 +48,7 @@ export function mount(root) {
     if (child) { child(); child = null; }
     const it = se.items[se.i];
     if (!it) return finished();
-    const id = it.kind === 'melange' ? pickMelange(store, current) : it.id;
+    const id = it.kind === 'melange' ? P.pickMelange(store, REGISTRY, current) : it.id;
     if (!id || !DRILLS[id]) { se.i++; se.done = 0; save(); return run(); }
     current = id;
     suite.hidden = true;
@@ -85,9 +61,12 @@ export function mount(root) {
       mystery: it.kind === 'melange',
       onDone: () => {
         se.done++;
+        // Trois échecs de suite dans le bloc en cours : on change d'air.
+        const brk = it.kind === 'focus' ? P.focusBreak(store, DRILLS[id], se.done) : null;
+        if (brk) se.done = it.n;
         save();
         const done = itemDone(it);
-        setText(step, `Séance · ${se.i + 1}/${se.items.length} · ${KIND[it.kind] || ''} · ${done ? 'terminé' : `partie ${se.done + 1}/${it.n}`}`);
+        setText(step, brk || `Séance · ${se.i + 1}/${se.items.length} · ${KIND[it.kind] || ''} · ${done ? 'terminé' : `partie ${se.done + 1}/${it.n}`}`);
         if (done || it.kind === 'melange') suite.hidden = false;
         if (done) setText(suite, se.i + 1 < se.items.length ? 'Suite de la séance ›' : 'Terminer la séance');
         else if (it.kind === 'melange') setText(suite, 'Exercice suivant ›');

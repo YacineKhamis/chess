@@ -20,19 +20,6 @@ const cap = s => s[0].toUpperCase() + s.slice(1);
 const plural = (n, w, ws = w + 's') => `${n} ${n > 1 ? ws : w}`;
 const KNOWN = ['acq', 'mast', 'rusty'];
 
-// Palier et couleur de la prochaine position (spec §4.2).
-export function setupFor(spec, r, rng = Math.random) {
-  const top = spec.levels.length - 1;
-  const level = r && KNOWN.includes(r.st) ? top : Math.min(r?.level ?? 0, top);
-  let colour = spec.userSide;
-  if (spec.flip && level === top) {
-    const need = r?.need ?? spec.need ?? 3, v = r?.var ?? 0;
-    if (r && r.streak === need - 1 && v !== 3) colour = v & 1 ? 'b' : 'w';
-    else colour = rng() < 0.5 ? 'w' : 'b';
-  }
-  return { level, colour };
-}
-
 export function mount(root, id, { tabs = null, onDone = null, mystery = false, replayItem = null } = {}) {
   const spec = DRILLS[id];
   if (!spec) {
@@ -161,7 +148,7 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
   }
   // Une de tes positions difficiles revient, avec une symétrie neuve (spec §1.5).
   async function prepareReplay(item) {
-    const s = replay(spec, item, ctx.rng, setupFor(spec, rec()).colour);
+    const s = replay(spec, item, ctx.rng, P.setupFor(spec, rec()).colour);
     if (spec.oracle === 'tb') {
       const p = ctx.tb.probe(s.fen);
       if (!p) return null;
@@ -186,7 +173,7 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
       if (s) return begin(s, { fromErr: s.fromErr, note: 'Ta position difficile revient… en miroir ou en couleurs inversées.' });
     }
     if (nextP && !same) { s = await nextP; nextP = null; }
-    else s = await prepare(same && start ? { level: start.level, colour: start.userColor } : setupFor(spec, rec()), same && start ? { sub: start.sub } : {});
+    else s = await prepare(same && start ? { level: start.level, colour: start.userColor } : P.setupFor(spec, rec()), same && start ? { sub: start.sub } : {});
     await begin(s);
   }
   function abandon() {
@@ -232,7 +219,7 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
     }
     const after = rec();
     const lines = [o.reason];
-    if (code) lines.push(P.resultText({ spec, code, attempt: a.summary(), before, after }));
+    if (code) lines.push(P.resultText({ spec, code, attempt: a.summary(), before, after, store, reg: REGISTRY }));
     else if (a.retry) lines.push('Hors série : cette partie ne compte pas pour la progression.');
     setVerdict(o.status === 'success' ? 'ok' : 'ko', lines.filter(Boolean).join(' '));
     // Flèches de la réfutation quand le coup a tout gâché.
@@ -244,10 +231,10 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
     else if (a.keyFen && !o.clean) list.push('key', 'why');
     // Exercice tout juste acquis : proposer la suite du parcours.
     const ns = P.nextStep(store, REGISTRY, spec.id);
-    if (ns && ns.id && ns.id !== spec.id && after && before?.st !== after.st && after.st === 'acq') {
+    if (!mystery && !onDone && ns.kind === 'next' && after && before?.st !== after.st && after.st === 'acq') {
       const go = btn('go');
       go.href = `#/drill/${ns.id}`;
-      setText(go, `Passer à : ${DRILLS[ns.id].title}`);
+      setText(go, ns.label);
       list.push('go');
     }
     show(list);
@@ -255,7 +242,7 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
     renderHeader(a.level); renderStats();
     if (onDone) onDone(code, a);
     // Prépare déjà la position suivante.
-    nextP = prepare(setupFor(spec, rec()));
+    nextP = prepare(P.setupFor(spec, rec()));
   }
 
   // ---------- Boutons ----------
@@ -308,7 +295,7 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
 
   // ---------- Démarrage ----------
   setVerdict('wait', 'Chargement du moteur et des tables…');
-  renderHeader(setupFor(spec, rec()).level); renderStats();
+  renderHeader(P.setupFor(spec, rec()).level); renderStats();
   drillContext().then(c => { if (!alive) return; ctx = c; fresh(); })
     .catch(() => setVerdict('ko', 'Impossible de charger le moteur ou les tables (data/tb). Recharge la page.'));
 

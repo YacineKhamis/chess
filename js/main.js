@@ -65,7 +65,7 @@ function home() {
       <section class="checklist" aria-label="Checklist avant chaque coup">
         <h2>Avant chaque coup</h2>
         <ol>
-          <li>Que menace le dernier coup adverse ? <a class="train" href="#/drill/parer-couloir">S’entraîner</a></li>
+          <li><span>Que menace le dernier coup adverse ? <a class="train" href="#/drill/parer-couloir">S’entraîner</a></span></li>
           <li>Ma case d’arrivée est-elle sûre ?</li>
           <li>Que protégeait ma pièce avant de bouger ?</li>
         </ol>

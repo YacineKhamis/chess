@@ -1,6 +1,6 @@
 // Page « Parcours » : les exercices par thème, leur état et la prochaine étape conseillée.
 import { load, h } from '../util.js';
-import { TRACKS, DRILL_LIST, REGISTRY, PARCOURS, DRILLS } from '../drills/index.js';
+import { TRACKS, DRILL_LIST, REGISTRY, DRILLS } from '../drills/index.js';
 import * as P from '../progress.js';
 
 const SYMBOL = { new: '○', learn: '◐', acq: '●', mast: '★', rusty: '↺' };
@@ -17,14 +17,6 @@ export const HOWTO = `
       <li>Ensuite, un contrôle de temps en temps, de plus en plus espacé. Un raté ? L’exercice revient plus vite.</li>
     </ul>
   </details>`;
-
-// Premier exercice du parcours conseillé qui n'est pas encore acquis et dont les prérequis le sont.
-export function hereId(store) {
-  return PARCOURS.find(id => {
-    const st = store.drills?.[id]?.st || 'new';
-    return (st === 'new' || st === 'learn') && P.prereqOk(store, REGISTRY, id);
-  }) || null;
-}
 
 function card(store, d, here) {
   const r = store.drills?.[d.id];
@@ -45,7 +37,7 @@ function card(store, d, here) {
 
 export function mount(root) {
   const store = load();
-  const here = hereId(store);
+  const here = P.hereId(store, REGISTRY);
   const sum = P.trackSummary(store, REGISTRY);
   const view = h(`
     <section class="parcours">
