@@ -4,7 +4,7 @@
 // Une unité n'est gardée que si chaque nouvelle pièce : n'est pas attaquée par l'autre camp,
 // n'attaque aucune pièce adverse et n'attaque aucune case de l'empreinte du motif.
 // Fonctions pures sur des placements { case: pièce } (majuscule = blanc), utilisables dans Node.
-import { int, pick, shift, sqAt, KNIGHT, KING, ROOK_DIRS, BISHOP_DIRS, ALL_SQUARES } from './geom.js';
+import { int, pick, shuffle, shift, sqAt, KNIGHT, KING, ROOK_DIRS, BISHOP_DIRS, ALL_SQUARES } from './geom.js';
 
 export const isWhite = p => p === p.toUpperCase();
 const QUEEN_DIRS = [...ROOK_DIRS, ...BISHOP_DIRS];
@@ -34,10 +34,12 @@ export const isAttacked = (placement, sq, colour) =>
   Object.entries(placement).some(([s, p]) => isWhite(p) === (colour === 'w') && attacksFrom(placement, s, p).includes(sq));
 
 // Pièce de `placed` qui casse la règle d'inertie, ou null si toutes sont inertes.
-function notInert(m, placed, foot) {
+// onlyPlaced : les attaques des pièces déjà posées sont vérifiées ailleurs ; on ne regarde alors que
+// les attaques entre nouvelles pièces (une paire : la tour blanche ne doit pas viser la tour noire).
+export function notInert(m, placed, foot, onlyPlaced = false) {
   for (const s of placed) {
     const p = m[s], white = isWhite(p);
-    if (isAttacked(m, s, white ? 'b' : 'w')) return s;
+    if (!onlyPlaced && isAttacked(m, s, white ? 'b' : 'w')) return s;
     for (const t of attacksFrom(m, s, p)) {
       if (foot.has(t)) return s;
       const q = m[t];
@@ -55,8 +57,11 @@ function notInert(m, placed, foot) {
  * sur les rangées 2 à 7 et sont bloqués l'un par l'autre (pas de prise en passant, pas de prise).
  */
 export function addNoise(rng, placement, footprint, n, { kinds = ['ram', 'pair'], types = ['N', 'B', 'R'] } = {}) {
-  const foot = footprint instanceof Set ? footprint : new Set(footprint || []);
+  const foot = asSet(footprint);
   let m = { ...placement }, units = 0;
+  // Attaques de chaque camp avant la pose : poser des pièces ne fait que couper des lignes, donc ces
+  // ensembles contiennent les attaques après la pose (hors attaques des nouvelles pièces, vérifiées à part).
+  let att = { w: attackedBy(m, 'w'), b: attackedBy(m, 'b') };
   for (let t = 0; t < 200 && units < n; t++) {
     const trial = { ...m }, placed = [];
     if (pick(rng, kinds) === 'ram') {
@@ -71,10 +76,29 @@ export function addNoise(rng, placement, footprint, n, { kinds = ['ram', 'pair']
       const b = pick(rng, free.filter(s => s !== a));
       trial[a] = type; trial[b] = type.toLowerCase(); placed.push(a, b);
     }
-    if (notInert(trial, placed, foot)) continue;
+    if (placed.some(s => att[isWhite(trial[s]) ? 'b' : 'w'].has(s))) continue;
+    if (notInert(trial, placed, foot, true)) continue;
     m = trial; units++;
+    att = { w: attackedBy(m, 'w'), b: attackedBy(m, 'b') };
   }
   return { placement: m, units };
+}
+
+const asSet = f => (f instanceof Set ? f : new Set(f || []));
+
+// Pion noir de plus, inerte, doublé derrière le pion noir d'un bélier : rééquilibre le matériel
+// quand le motif donne un pion aux Blancs (le pion qui attaque la pièce clouée, par exemple).
+export function addBlackPawn(rng, placement, footprint) {
+  const foot = asSet(footprint);
+  const spots = ALL_SQUARES.filter(s => {
+    const below = shift(s, 0, -1), below2 = shift(s, 0, -2);
+    return !placement[s] && !foot.has(s) && +s[1] <= 7 && below && placement[below] === 'p' && below2 && placement[below2] === 'P';
+  });
+  for (const s of shuffle(rng, spots)) {
+    const m = { ...placement, [s]: 'p' };
+    if (!notInert(m, [s], foot)) return m;
+  }
+  return null;
 }
 
 // Nombre d'unités demandé : un entier ou un intervalle [min, max] tiré au hasard.

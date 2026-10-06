@@ -4,7 +4,7 @@
 import { Chess } from '../../vendor/chess.js';
 import { V } from '../drill/verify.js';
 import { int, pick, shift, sqAt, fileOf, rankOf, dist, between, fenFrom, knightTargets, kingTargets, ALL_SQUARES } from '../drill/geom.js';
-import { addNoise, attacksFrom, isAttacked, unitsFor } from '../drill/noise.js';
+import { addNoise, addBlackPawn, attacksFrom, isAttacked, unitsFor } from '../drill/noise.js';
 import { VALUE } from '../analysis.js';
 
 // ---------- Outils communs ----------
@@ -15,20 +15,22 @@ const whiteAttackers = (m, sq) => Object.keys(m).filter(s => m[s] === m[s].toUpp
 const retry = (n, fn) => { for (let i = 0; i < n; i++) { const c = fn(); if (c) return c; } return null; };
 const legal = fen => { try { return new Chess(fen); } catch { return null; } };
 
-// Lest (béliers de pions) puis bruit du niveau, autour de l'empreinte du motif.
-// Le lest donne du sens à l'évaluation : sans pions, « une pièce de plus » vaut souvent nulle (R+C contre R).
-export function dress(rng, m, foot, L) {
+// Lest puis bruit du niveau, autour de l'empreinte du motif. Le lest (béliers de pions, parfois une paire
+// de pièces mineures) donne du sens à l'évaluation : sans lui, « une pièce de plus » vaut souvent nulle
+// (roi et cavalier contre roi) et toute finale de pions gagnée écrase l'écart entre les coups.
+// L.noise = [min, max] : on vise un nombre au hasard dans l'intervalle et on accepte dès min unités posées.
+export function dress(rng, m, foot, L, { ballast = L.ballast, pairs = L.pairs } = {}) {
   let out = m;
-  const want = unitsFor(rng, L.ballast);
-  if (want) {
-    const r = addNoise(rng, out, foot, want, { kinds: ['ram'] });
+  for (const [want, opts] of [[ballast, { kinds: ['ram'] }], [pairs, { kinds: ['pair'], types: ['N', 'B'] }]]) {
+    if (!want) continue;
+    const r = addNoise(rng, out, foot, want, opts);
     if (r.units < want) return null;
     out = r.placement;
   }
-  const n = unitsFor(rng, L.noise);
-  if (n) {
-    const r = addNoise(rng, out, foot, n);
-    if (r.units < n) return null;
+  if (L.noise) {
+    const min = Array.isArray(L.noise) ? L.noise[0] : L.noise;
+    const r = addNoise(rng, out, foot, unitsFor(rng, L.noise));
+    if (r.units < min) return null;
     out = r.placement;
   }
   return out;
@@ -56,7 +58,12 @@ const SHARED = {
 
 // ---------- T1 · Pièce en prise ----------
 // Une pièce noire X (la strate) non défendue, attaquée par une seule pièce blanche Y.
-// Leurres (L2–L3) : une pièce mineure noire défendue par un pion, attaquée par une dame ou une tour blanche.
+// Leurres (L2–L3) : une pièce mineure noire défendue par un pion, attaquée par une tour blanche
+// (ou une dame quand X est une tour ou une dame) : la prendre perd du matériel.
+// Un échec « gratuit » (la pièce qui donne échec n'est pas prise) rapporterait autant que la clé, puisque X
+// reste en prise : on écarte ces positions.
+const freeChecks = (chess, key) => chess.moves({ verbose: true })
+  .some(mv => mv.san.includes('+') && mv.from + mv.to !== key && !chess.isAttacked(mv.to, 'b'));
 function genHanging(rng, L, sub) {
   const m = {};
   const K = sqAt(int(rng, 0, 7), int(rng, 0, 1)), k = sqAt(int(rng, 0, 7), int(rng, 6, 7));
@@ -71,26 +78,32 @@ function genHanging(rng, L, sub) {
   m[ys] = Y;
   const foot = new Set([...box(k), ...box(K), xs, ys, ...(between(ys, xs) || [])]);
   const decoys = [];
+  let extra = 0;                                   // matériel offert aux Blancs par les leurres
   for (let i = 0, nd = unitsFor(rng, L.decoys); i < nd; i++) {
     const ds = sqAt(int(rng, 1, 6), int(rng, 2, 5));
     const ps = shift(ds, pick(rng, [-1, 1]), 1);
     if (m[ds] || !ps || m[ps]) return null;
     m[ds] = pick(rng, ['n', 'b']); m[ps] = 'p';
-    const A = pick(rng, ['Q', 'R']);
+    const A = VALUE[X] >= 5 && !Object.values(m).includes('Q') && rng() < 0.5 ? 'Q' : 'R';
     const as = pick(rng, attacksFrom(m, ds, A).filter(s => !m[s] && rankOf(s) < 7 && rankOf(s) > 0));
     if (!as) return null;
     m[as] = A;
+    extra += VALUE[A.toLowerCase()] - 4;
     decoys.push(ds);
     [ds, ps, as, ...(between(as, ds) || [])].forEach(s => foot.add(s));
   }
-  const d = dress(rng, m, foot, L);
-  if (!d) return null;
   // X : aucun défenseur, un seul attaquant ; aucune pièce blanche attaquée ; leurres bien défendus.
-  if (isAttacked(d, xs, 'b') || whiteAttackers(d, xs).length !== 1) return null;
-  if (Object.keys(d).some(s => d[s] !== 'K' && d[s] === d[s].toUpperCase() && isAttacked(d, s, 'b'))) return null;
-  if (decoys.some(s => !isAttacked(d, s, 'b'))) return null;
+  // Contrôlé avant le bruit : une pièce inerte ne crée aucune attaque, elle peut seulement couper une ligne
+  // (et l'empreinte protège les lignes utiles).
+  if (isAttacked(m, xs, 'b') || whiteAttackers(m, xs).length !== 1) return null;
+  if (Object.keys(m).some(s => m[s] !== 'K' && m[s] === m[s].toUpperCase() && isAttacked(m, s, 'b'))) return null;
+  if (decoys.some(s => !isAttacked(m, s, 'b'))) return null;
+  let d = dress(rng, m, foot, L);
+  // Leurre attaqué par une tour : tour (5) contre pièce et pion (4), on rend un pion aux Noirs.
+  for (let i = 0; d && i < extra && extra <= 2; i++) d = addBlackPawn(rng, d, foot);
+  if (!d) return null;
   const f = finish(d);
-  if (!f) return null;
+  if (!f || freeChecks(f.chess, ys + xs)) return null;
   return { fen: f.fen, key: ys + xs, roles: { piece: ys, to: xs, targets: [xs], decoys, gain: VALUE[X] } };
 }
 
@@ -111,8 +124,9 @@ function genFork(rng, L, sub) {
   if (!K) return null;
   m[K] = 'K';
   const foot = new Set([...box(k), f, t, n, K]);
+  if (isAttacked(m, f, 'b')) return null;
   const d = dress(rng, m, foot, L);
-  if (!d || isAttacked(d, f, 'b')) return null;
+  if (!d) return null;
   const fin = finish(d);
   if (!fin) return null;
   return { fen: fin.fen, key: n + f, roles: { piece: n, to: f, targets: [k, t], gain: VALUE[T] - 3 } };
@@ -139,9 +153,9 @@ function genSkewer(rng, L, sub) {
   m[K] = 'K';
   const lineSq = [cs, ...between(cs, k), k, ...between(k, q), q];
   const foot = new Set([...box(k), ...lineSq, R, ...between(R, cs), K]);
+  if (isAttacked(m, cs, 'b') || isAttacked(m, R, 'b')) return null;
   const d = dress(rng, m, foot, L);
   if (!d) return null;
-  if (isAttacked(d, cs, 'b') || isAttacked(d, R, 'b')) return null;
   const fin = finish(d);
   if (!fin) return null;
   return { fen: fin.fen, key: R + cs, roles: { piece: R, to: cs, targets: [k, q], line: lineSq, gain: 4 } };
@@ -173,10 +187,12 @@ function genPin(rng, L, sub) {
   m[K] = 'K';
   const pin = between(k, B);
   const foot = new Set([...box(k), p, B, po, push, ...pin, K, ...(guard ? [guard] : [])]);
-  const d = dress(rng, m, foot, L);
+  if (isAttacked(m, push, 'b') && !isAttacked(m, push, 'w')) return null;
+  if (isAttacked(m, B, 'b')) return null;
+  let d = dress(rng, m, foot, L, { pairs: P === 'r' ? L.pairs : 0 });
+  // Sans pion de garde, le pion du motif donne un pion de plus aux Blancs : on rend ce pion aux Noirs.
+  if (d && !guard) d = addBlackPawn(rng, d, foot);
   if (!d) return null;
-  if (isAttacked(d, push, 'b') && !isAttacked(d, push, 'w')) return null;
-  if (isAttacked(d, B, 'b')) return null;
   const fin = finish(d);
   if (!fin) return null;
   return { fen: fin.fen, key: po + push, roles: { piece: po, to: push, pinned: p, pinner: B, targets: [p], line: [B, ...pin, k], gain: 2 } };
@@ -220,7 +236,7 @@ export default [
   {
     ...SHARED, id: 'clouage', title: 'Exploiter le clouage', short: 'Clouage', family: 'tactic:pin',
     goal: { kind: 'material', gain: 2, within: 3 }, prereq: ['piece-en-prise'],
-    levels: LEVELS,
+    levels: [{ ...LEVELS[0], pairs: 1 }, LEVELS[1], LEVELS[2]],
     strata: () => ['n', 'r'],
     tip: 'Une pièce clouée devant son roi ne peut pas fuir : attaque-la avec moins cher qu’elle, un pion par exemple.',
     ideas: ['pin'],
