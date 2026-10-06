@@ -59,7 +59,8 @@ export function mount(root) {
     child = mountDrill(body, id, {
       replayItem,
       mystery: it.kind === 'melange',
-      onDone: () => {
+      onDone: code => {
+        if (!code || code === 'R') return;   // parties « hors série » : elles ne comptent pas dans la séance
         se.done++;
         // Trois échecs de suite dans le bloc en cours : on change d'air.
         const brk = it.kind === 'focus' ? P.focusBreak(store, DRILLS[id], se.done) : null;
