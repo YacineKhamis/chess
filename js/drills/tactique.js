@@ -6,7 +6,7 @@
 import { Chess } from '../../vendor/chess.js';
 import { V } from '../drill/verify.js';
 import { int, pick, shuffle, shift, sqAt, fileOf, rankOf, dist, between, fenFrom, knightTargets, kingTargets, ALL_SQUARES } from '../drill/geom.js';
-import { addNoise, addBlackPawn, attackedBy, attacksFrom, isAttacked, isWhite, unitsFor } from '../drill/noise.js';
+import { addNoise, addBlackPawn, attackedBy, attacksFrom, canAdd, isAttacked, isWhite, unitsFor } from '../drill/noise.js';
 import { VALUE } from '../analysis.js';
 
 // ---------- Outils communs ----------
@@ -29,6 +29,10 @@ const blackTargets = (m, s, P) => attacksFrom(m, s, P).filter(t => m[t] && !isWh
 // de pièces mineures) donne du sens à l'évaluation : sans lui, « une pièce de plus » vaut souvent nulle
 // (roi et cavalier contre roi) et toute finale de pions gagnée écrase l'écart entre les coups.
 // L.noise = [min, max] : on vise un nombre au hasard dans l'intervalle et on accepte dès min unités posées.
+// Le bruit n'emploie que des paires de pièces mineures : une paire de tours, inerte au départ, s'active dès que le
+// motif ouvre des lignes (échecs, autres gains) et crée des doubles solutions (mesuré : 4 désaccords sur 5 au
+// contrôle long venaient de paires de tours).
+const NOISE = { types: ['N', 'B'] };
 export function dress(rng, m, foot, L, { ballast = L.ballast, pairs = L.pairs } = {}) {
   let out = m;
   for (const [want, opts] of [[ballast, { kinds: ['ram'] }], [pairs, { kinds: ['pair'], types: ['N', 'B'] }]]) {
@@ -39,7 +43,7 @@ export function dress(rng, m, foot, L, { ballast = L.ballast, pairs = L.pairs } 
   }
   if (L.noise) {
     const min = Array.isArray(L.noise) ? L.noise[0] : L.noise;
-    const r = addNoise(rng, out, foot, unitsFor(rng, L.noise));
+    const r = addNoise(rng, out, foot, unitsFor(rng, L.noise), NOISE);
     if (r.units < min) return null;
     out = r.placement;
   }
@@ -99,7 +103,8 @@ function placeDecoy(rng, m, foot, xs, k, A) {
   for (let t = 0; t < 20; t++) {
     const D = pick(rng, ['n', 'b']);
     const ds = sqAt(int(rng, 1, 6), int(rng, 2, 5)), ps = shift(ds, pick(rng, [-1, 1]), 1);
-    if (m[ds] || foot.has(ds) || !ps || m[ps] || foot.has(ps)) continue;
+    // canAdd : pas de 3e cavalier ni de fous de même couleur, pas de 3e tour ni de 2e dame (la case ne compte que pour un fou).
+    if (m[ds] || foot.has(ds) || !ps || m[ps] || foot.has(ps) || !canAdd(m, D, ds) || !canAdd(m, A, ds)) continue;
     const m2 = { ...m, [ds]: D, [ps]: 'p' };
     // Le leurre et son pion : n'attaquent aucune pièce blanche, ne défendent pas X, et ne sont pas déjà attaqués.
     const hits = [...attacksFrom(m2, ds), ...attacksFrom(m2, ps)];
@@ -280,7 +285,8 @@ export default [
     levels: [
       { ...LEVELS[0], decoys: 0 },
       { ...LEVELS[1], decoys: 1 },
-      { ...LEVELS[2], decoys: [1, 2] },
+      // Les leurres (trois pièces chacun) habillent déjà la position : un peu moins de bruit qu'aux autres motifs.
+      { ...LEVELS[2], decoys: [1, 2], noise: [3, 6] },
     ],
     strata: () => ['n', 'b', 'r', 'q'],
     tip: 'Avant tout, regarde ce que l’adversaire laisse sans défense. Mais une pièce protégée par un pion n’est pas un cadeau.',

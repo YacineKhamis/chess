@@ -22,7 +22,8 @@ export async function recheck(engine, spec, s) {
     const depth = (s.level < 1 ? 10 : 12) + 4;
     const [b, c] = await engine.analyse(s.fen, { depth, movetime: 8000, multipv: 2 });
     const gap = b && c ? b.cp - c.cp : Infinity;
-    const ok = !!b && keysOf(s).some(k => same(k, b.move)) && b.mate == null && gap >= 150;
+    // Un mat lointain trouvé plus profond n'est pas un désaccord : gagner la dame finit souvent par mater.
+    const ok = !!b && keysOf(s).some(k => same(k, b.move)) && gap >= 150;
     return { ok, why: `d${depth} ${b?.move} ${b?.cp} / ${c?.move} ${c?.cp} (clé ${s.key})` };
   }
   if (kind === 'mate') {
@@ -42,7 +43,7 @@ export async function recheck(engine, spec, s) {
 }
 
 /**
- * Une gaffe nette pour l'utilisateur au trait : un coup dont l'évaluation longue (profondeur 20, au plus 3 s)
+ * Une gaffe nette pour l'utilisateur au trait : un coup dont l'évaluation longue (3 s, ou profondeur 20)
  * est au moins 200 cp sous le seuil d'échec `lost` (point de vue de l'utilisateur). null si aucune n'est trouvée.
  */
 export async function findBlunder(engine, fen, lost, rng) {
@@ -55,8 +56,9 @@ export async function findBlunder(engine, fen, lost, rng) {
     const after = new Chess(fen);
     after.move({ from: l.move.slice(0, 2), to: l.move.slice(2, 4), promotion: l.move[4] || 'q' });
     if (after.isGameOver()) continue;
-    // Profondeur 20 (au plus 3 s) : un mat plus lent n'est pas une gaffe dans un exercice « mat en n ».
-    const [r] = await engine.analyse(after.fen(), { depth: 20, movetime: 3000 });
+    // Exercice « mat en n » (seuil ≥ 8000) : 3 s pleines, car un mat plus lent n'est pas une gaffe et seule une
+    // recherche au moins aussi forte que la confirmation de l'essai (1,2 s) l'exclut. Ailleurs, profondeur 20 suffit.
+    const [r] = await engine.analyse(after.fen(), lost >= 8000 ? { movetime: 3000 } : { depth: 20, movetime: 3000 });
     if (r && -r.cp <= lost - 200) return { move: l.move, long: -r.cp };
   }
   return null;

@@ -47,7 +47,7 @@ after(() => {
 const report = [];
 
 // ---------------------------------------------------------------- 1. Sans moteur
-test('bruit inerte : attaques identiques à chess.js, unités inertes, matériel égal, pions non empilés', () => {
+test('bruit inerte : attaques identiques à chess.js, unités inertes, matériel égal, pions non empilés, pas de 3e cavalier', () => {
   const rng = mulberry32(5);
   const bases = [
     [{ e1: 'K', e8: 'k', d4: 'Q', c6: 'n' }, ['e1', 'e8', 'd4', 'c6', 'd5', 'e5']],
@@ -80,6 +80,7 @@ test('bruit inerte : attaques identiques à chess.js, unités inertes, matériel
     }
     // une colonne ne reçoit qu'un bélier, et seulement si elle n'avait aucun pion
     for (const [k, v] of Object.entries(pawnFiles)) assert.ok(v <= 1 || Object.keys(base).some(s => s[0] === k[0] && base[s].toLowerCase() === 'p'), `pions empilés ${k} ${fenFrom(m)}`);
+    for (const t of 'NBRnbr') assert.ok(Object.values(m).filter(p => p === t).length <= 2, `plus de deux ${t} : ${fenFrom(m)}`);
     const mat = col => Object.values(m).filter(p => (p === p.toUpperCase()) === (col === 'w')).map(p => p.toLowerCase()).sort().join('');
     const baseMat = col => Object.values(base).filter(p => (p === p.toUpperCase()) === (col === 'w')).map(p => p.toLowerCase()).sort().join('');
     assert.equal(mat('w').length - baseMat('w').length, mat('b').length - baseMat('b').length, 'matériel équilibré');
@@ -90,8 +91,20 @@ test('bruit inerte : attaques identiques à chess.js, unités inertes, matériel
   assert.equal(m?.c6, 'p');
 });
 
+// Une position qu'on peut atteindre sans promotion : au plus 8 pions, 2 cavaliers, 2 fous de couleurs différentes,
+// 2 tours et 1 dame par camp.
+function realistic(fen) {
+  const board = new Chess(fen).board().flat().filter(Boolean);
+  for (const col of ['w', 'b']) {
+    const mine = board.filter(p => p.color === col), n = t => mine.filter(p => p.type === t).length;
+    for (const [t, max] of [['p', 8], ['n', 2], ['b', 2], ['r', 2], ['q', 1]]) assert.ok(n(t) <= max, `trop de ${t} (${col}) : ${fen}`);
+    const shades = mine.filter(p => p.type === 'b').map(p => (p.square.charCodeAt(0) + +p.square[1]) % 2);
+    assert.ok(new Set(shades).size === shades.length, `deux fous sur la même couleur (${col}) : ${fen}`);
+  }
+}
+
 for (const id of ids) {
-  test(`${id} : générateur synchrone, rapide, légal, coup clé et rôles cohérents`, () => {
+  test(`${id} : générateur synchrone, rapide, légal, réaliste, coup clé et rôles cohérents`, () => {
     const spec = DRILLS[id], kind = verifyKind(spec);
     for (let level = 0; level < spec.levels.length; level++) {
       const rng = mulberry32(100 + level), n = N(60, 200, 400);
@@ -109,6 +122,7 @@ for (const id of ids) {
         const chess = new Chess(c.fen);
         assert.equal(chess.turn(), spec.userSide);
         keys.add(placement(c.fen));
+        realistic(c.fen);
         for (const v of Object.values(c.roles || {}).flat()) if (typeof v === 'string' && /^[a-h]/.test(v)) assert.match(v, /^([a-h][1-8]){1,2}[qrbn]?$/, `rôle mal formé ${v}`);
         if (kind === 'def') {
           // la menace est un mat en 1 si les Blancs passaient leur tour

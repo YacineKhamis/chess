@@ -83,7 +83,7 @@ function ramSpots(m, foot, att) {
     if (pawnFiles.has(f)) continue;
     for (let r = 2; r <= 4; r++) {                 // pion blanc en 3e–5e rangée : des pions de milieu de partie
       const a = sqAt(f, r), b = sqAt(f, r + 1);
-      if (inertAt(m, foot, att, a, 'P') && inertAt(m, foot, att, b, 'p')) spots.push([a, b]);
+      if (inertAt(m, foot, att, a, 'P') && inertAt(m, foot, att, b, 'p') && canAdd(m, 'P', a) && canAdd(m, 'p', b)) spots.push([a, b]);
     }
   }
   return spots;
@@ -94,11 +94,20 @@ const pairSpots = (m, foot, att, type) => ({
   W: ALL_SQUARES.filter(s => +s[1] <= 6 && inertAt(m, foot, att, s, type)),
   B: ALL_SQUARES.filter(s => +s[1] >= 3 && inertAt(m, foot, att, s, type.toLowerCase())),
 });
+// Peut-on ajouter `piece` en `sq` sans position impossible sans promotion ? Au plus 8 pions, 2 cavaliers,
+// 2 fous (sur des cases de couleurs différentes), 2 tours et 1 dame par camp.
+const MAX = { p: 8, n: 2, b: 2, r: 2, q: 1, k: 1 };
+const shade = sq => (sq.charCodeAt(0) + +sq[1]) % 2;
+export function canAdd(m, piece, sq) {
+  const same = Object.keys(m).filter(s => m[s] === piece);
+  if (same.length >= MAX[piece.toLowerCase()]) return false;
+  return piece.toLowerCase() !== 'b' || same.every(s => shade(s) !== shade(sq));
+}
 // Une paire tirée parmi ces cases, dont les deux pièces ne s'attaquent pas l'une l'autre.
 function tryPair(rng, m, { W, B }, type) {
   for (let i = 0; i < 12; i++) {
     const w = pick(rng, W), b = pick(rng, B);
-    if (w === b) continue;
+    if (w === b || !canAdd(m, type, w) || !canAdd(m, type.toLowerCase(), b)) continue;
     const trial = { ...m, [w]: type, [b]: type.toLowerCase() };
     if (attacksFrom(trial, w).includes(b) || attacksFrom(trial, b).includes(w)) continue;
     return trial;
@@ -117,7 +126,10 @@ export function addNoise(rng, placement, footprint, n, { kinds = ['ram', 'pair']
   const foot = asSet(footprint);
   let m = { ...placement }, units = 0, cache = null;
   const misses = {};                               // échecs par sorte d'unité : au bout de 3, on n'insiste plus
-  const alive = x => (misses[x] || 0) < 3;
+  // Au plus deux cavaliers, deux fous, deux tours par camp (au-delà, il faudrait une promotion).
+  const count = p => Object.values(m).filter(x => x === p).length;
+  const room = T => count(T) < 2 && count(T.toLowerCase()) < 2;
+  const alive = x => (misses[x] || 0) < 3 && (x === 'ram' || room(x));
   for (let t = 0; t < 4 * n && units < n; t++) {
     const ks = kinds.filter(k => (k === 'ram' ? alive('ram') : types.some(alive)));
     if (!ks.length) break;
@@ -148,6 +160,7 @@ export function addBlackPawn(rng, placement, footprint) {
     return !placement[s] && !foot.has(s) && +s[1] <= 7 && below && placement[below] === 'p' && below2 && placement[below2] === 'P';
   });
   for (const s of shuffle(rng, spots)) {
+    if (!canAdd(placement, 'p', s)) return null;
     const m = { ...placement, [s]: 'p' };
     if (!notInert(m, [s], foot)) return m;
   }
