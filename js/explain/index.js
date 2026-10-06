@@ -99,10 +99,11 @@ function explainMoveRaw({ fen, move, family: famId, ideas = [], pv = [], lastMov
   let text;
   if (primary) text = sentences(primary, warning);
   else {
-    const fb = fallbackTexts(c, fam, tip);
-    text = [fb.join(' ')];
-    if (warning && visible(text[0] + ' ' + warning.say[0]) <= MAX) text.push(warning.say[0]);
-    text = text.map(finish);
+    // Au plus deux phrases : l'avertissement passe avant « Plusieurs coups se valent ici ».
+    let fb = fallbackTexts(c, fam, tip);
+    const w = warning && fam.fallback && [warning.say[0], warning.short].find(x => x && visible(fb.at(-1) + ' ' + x) <= MAX);
+    if (w) fb = [fb.at(-1), w];
+    text = fb.map(finish);
   }
   return { idea, text, tags, viz: mergeViz(primary?.viz, warning?.viz), debug };
 }
@@ -119,7 +120,7 @@ export function explainMove(args = {}) {
 }
 
 // Phrase « Mieux : **B**. … » : le coup, puis la première phrase de son explication si elle tient.
-function betterLine(b, fam, ideas) {
+function betterLine(b, fam) {
   const head = `Mieux : ${mv(b.san)}.`;
   const { primary } = evaluate(b, fam);
   if (!primary) return finish(head);

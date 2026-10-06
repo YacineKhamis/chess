@@ -44,7 +44,7 @@ export default family({
   id: 'kqk',
   rules: ['mate', 'rescue', 'mate-every-reply', 'promote', 'knight-jump', 'shadow', 'box-shrink', 'kqk-edge', 'driving-check', 'approach', 'hanging-take', 'passed-push', 'lookahead', 'capture'],
   warnings: ['stalemate-danger', 'underpromo'],
-  mistakes: ['stalemate', 'missed-mate', 'piece-lost', 'useless-check', 'box-grow', 'stalemate-risk', 'king-away'],
+  mistakes: ['stalemate', 'piece-lost', 'missed-mate', 'useless-check', 'box-grow', 'stalemate-risk', 'king-away'],
   fallback: {
     idea: 'Resserre la boîte avec ta dame, ou amène ton roi.',
     say: 'L’essentiel : ta dame resserre la boîte sans jamais pater, puis ton roi vient aider.',

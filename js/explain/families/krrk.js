@@ -44,7 +44,7 @@ export default family({
   id: 'krrk',
   rules: ['mate', 'rescue', 'mate-every-reply', 'promote', 'ladder', 'rook-far', 'box-shrink', 'driving-check', 'approach', 'hanging-take', 'passed-push', 'lookahead', 'capture'],
   warnings: ['stalemate-danger', 'underpromo'],
-  mistakes: ['stalemate', 'missed-mate', 'piece-lost', 'useless-check', 'box-grow', 'cut-lost', 'stalemate-risk'],
+  mistakes: ['stalemate', 'piece-lost', 'missed-mate', 'useless-check', 'box-grow', 'cut-lost', 'stalemate-risk'],
   fallback: {
     idea: 'Fais avancer tes tours en escalier, loin du roi adverse.',
     say: 'L’essentiel : les tours avancent en escalier, l’une coupe, l’autre donne échec, toujours loin du roi adverse.',

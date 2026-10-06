@@ -180,3 +180,17 @@ test('Philidor : l’échange vers une finale roi et pion nulle est une réussit
   assert.ok(p && !p.win, 'la position de test doit être nulle');
   assert.equal(GOALS.hold.afterAny(st)?.status, 'success');
 });
+
+test('symétries : miroir et échange des couleurs envoient chaque case au bon endroit', async () => {
+  const { mirrorSq, flipSq, mapSquares } = await import('../../js/drill/geom.js');
+  assert.equal(flipSq('e1'), 'e8'); assert.equal(flipSq('a8'), 'a1'); assert.equal(flipSq('h4'), 'h5');
+  assert.equal(mirrorSq('a1'), 'h1'); assert.equal(mirrorSq('d5'), 'e5');
+  assert.equal(mapSquares('e2e4', flipSq), 'e7e5');
+  // Les rôles transformés désignent les mêmes pièces que la FEN transformée.
+  const spec = DRILLS['pion-cases-cles'];
+  const fen = '8/8/8/8/8/4k3/1P6/3K4 w - - 0 1';
+  const s = finalize(spec, { fen, level: 0, roles: { pawn: 'b2', keys: ['a4', 'b4', 'c4'] } }, { ref: 15 }, { mirror: true, flip: true });
+  const c = new Chess(s.fen);
+  assert.deepEqual(c.get(s.roles.pawn), { type: 'p', color: 'b' });
+  assert.deepEqual(s.roles.keys, ['h5', 'g5', 'f5']);
+});

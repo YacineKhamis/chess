@@ -45,7 +45,7 @@ export const clearLine = (placement, a, b) => { const l = between(a, b); return 
 
 // ---------- Symétries (miroir gauche-droite, échange des couleurs) appliquées aux cases et coups ----------
 export const mirrorSq = sq => FILES[7 - fileOf(sq)] + sq[1];
-export const flipSq = sq => sq[0] + (8 - +sq[1]);
+export const flipSq = sq => sq[0] + (9 - +sq[1]);
 const SQ = /^[a-h][1-8]$/, UCI = /^([a-h][1-8])([a-h][1-8])([qrbn]?)$/;
 // Transforme une valeur quelconque (case, coup UCI, tableau, objet) avec la fonction de case f.
 export function mapSquares(v, f) {

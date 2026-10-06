@@ -177,7 +177,8 @@ export class Attempt {
     if (!this.hintMove || this.hintMove.fen !== this.fen) {
       const { moves, lines, count } = await this.candidates();
       if (!moves.length) return null;
-      const move = moves.length > 1 ? pickTeachingMove({ fen: this.fen, family: this.spec.family, ideas: this.spec.ideas, candidates: moves }) : moves[0];
+      const lastMove = this.history.at(-1)?.uci ?? null;
+      const move = moves.length > 1 ? pickTeachingMove({ fen: this.fen, family: this.spec.family, ideas: this.spec.ideas, candidates: moves, tb: this.ctx.tb, lastMove }) : moves[0];
       const line = lines.find(l => l.move === move);
       this.hintMove = { fen: this.fen, move, pv: line ? line.pv : [move], count, step: 0 };
     }
@@ -185,7 +186,7 @@ export class Attempt {
     h.step = Math.min(3, h.step + 1);
     this.hintMax = Math.max(this.hintMax, h.step);
     const ex = explainMove({ fen: this.fen, move: h.move, family: this.spec.family, ideas: this.spec.ideas, pv: h.pv,
-      lastMove: this.history.at(-1)?.uci ?? null, tb: this.ctx.tb, level: h.step === 3 ? 3 : 1 });
+      lastMove: this.history.at(-1)?.uci ?? null, tb: this.ctx.tb, level: h.step === 3 ? 3 : 1, tip: this.spec.tip });
     return { step: h.step, move: h.move, count: h.count, ...ex };
   }
 
@@ -198,7 +199,8 @@ export class Attempt {
     const h = this.history[i];
     const cand = await this.candidates(fen, i === 0);
     if (!cand.moves.length) return null;
-    const best = cand.moves.length > 1 ? pickTeachingMove({ fen, family: this.spec.family, ideas: this.spec.ideas, candidates: cand.moves }) : cand.moves[0];
+    const prev = i > 0 ? this.history[i - 1]?.uci ?? null : null;
+    const best = cand.moves.length > 1 ? pickTeachingMove({ fen, family: this.spec.family, ideas: this.spec.ideas, candidates: cand.moves, tb: this.ctx.tb, lastMove: prev }) : cand.moves[0];
     const bestLine = cand.lines.find(l => l.move === best);
     return { fen, userMove: h?.uci, bestMove: best, ...explainMistake({ fen, userMove: h?.uci, bestMove: best, family: this.spec.family,
       evalBest: bestLine ? bestLine.cp : null, evalUser: h?.v ?? null, pvBest: bestLine?.pv ?? [best], pvUser: [], tb: this.ctx.tb }) };

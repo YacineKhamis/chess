@@ -14,14 +14,14 @@
 // Les familles (js/explain/families/*.js) assemblent ces faits par priorité : voir family() plus bas et index.js.
 import { idx } from './board64.js';
 import {
-  node, F, R, name, typeOf, colorOf, other, cheb, edge, VALUE, KING_N, between, knightJump,
+  node, F, R, name, typeOf, colorOf, other, cheb, edge, VALUE, KING_N, between,
   attacked, attackersOf, pieceAttacks, units, legalMoves, play, inCheck, dirOf, sanOf,
-  realCut, cutBorder, captures, threatenedBy, checkInfo, rescue, threatsNext, approach, opposition,
+  realCut, cutBorder, captures, checkInfo, rescue, threatsNext, approach,
   stalemateDanger, mateEveryReply, matesIn1, hasMateIn1, see, seeMove, forkTargets, pins, skewers,
   lineGain, staticGain, worstBoxAfter, box,
 } from './features.js';
 import {
-  cap, mine, theirs, king, side, subj, obj, pron, du, au, who, agree, alone, pname, cases, plusQue, line, lineNoun,
+  cap, mine, theirs, king, side, subj, pron, du, who, agree, alone, pname, cases, plusQue, line,
   mv, finish, visible,
 } from './fr.js';
 
@@ -234,7 +234,7 @@ rule({ id: 'driving-check', run(c) {
   const Kd = X.Kd(c), K = X.K(c);
   const toward = ch.replies.every(r => typeOf(r.p) === 'k' && edge(r.to) < edge(Kd));
   const a = ch.boxBefore, b = ch.worstBox, same = ch.bestBox === ch.worstBox;
-  return { tags: ['driving-check'], data: { a, b }, idea: 'Un échec peut le repousser.',
+  return { tags: ['driving-check'], data: { a, b }, idea: `Un échec peut repousser ${X.K(c)}.`,
     say: [`L’échec repousse ${K}${toward ? ' vers le bord' : ''} : sa boîte passe de ${a} à ${cases(b)}${same ? '' : ' au plus'}.`],
     viz: { marks: marks(ch.replies.map(r => r.to), 'mark-escape') }, viz1: boxViz(c, false) };
 } });
@@ -480,33 +480,63 @@ rule({ id: 'mate-threat', run(c) {
     viz: { arrows: [{ from: name(mt.from), to: name(mt.to), cls: 'plan' }] } };
 } });
 
+// Comment le coup pare la menace T : { how (« tu … »), what (« … » après le coup, 3e personne), tag }.
 function parryHow(c, T) {
   const m = c.m, Ku0 = c.bn.king(c.us), Ku = c.an.king(c.us), t = X.t(c);
-  if (m.cap && m.to === T.from) return { how: 'tu prends la pièce qui menaçait', tag: 'capture-attacker' };
+  if (m.cap && m.to === T.from) return { how: 'tu prends la pièce qui menaçait', what: 'prend la pièce qui menaçait', tag: 'capture-attacker' };
   if (t === 'p' && KING_N[Ku0].includes(m.from) && !c.an.g[m.from] && !attacked(c.an.g, m.from, c.def))
-    return { how: `tu donnes de l’air à ton roi (case ${name(m.from)})`, tag: 'luft' };
-  if (t === 'k') return { how: 'ton roi se met à l’abri', tag: 'king-move' };
-  if (between(T.from, T.to).includes(m.to) || between(T.from, Ku).includes(m.to)) return { how: 'tu bloques la ligne', tag: 'block' };
+    return { how: `tu donnes de l’air à ton roi (case ${name(m.from)})`, what: 'donne de l’air à ton roi', tag: 'luft' };
+  if (t === 'k') return { how: 'ton roi se met à l’abri', what: 'met ton roi à l’abri', tag: 'king-move' };
+  if (between(T.from, T.to).includes(m.to) || between(T.from, Ku).includes(m.to)) return { how: 'tu bloques la ligne', what: 'bloque la ligne', tag: 'block' };
   if (pieceAttacks(c.an.g, m.to)[T.to]) {
     const back = c.us === 'w' ? 0 : 7;
-    return R(T.to) === back ? { how: 'tu protèges ta première rangée', tag: 'guard' } : { how: `tu protèges la case ${name(T.to)}`, tag: 'guard' };
+    return R(T.to) === back ? { how: 'tu protèges ta première rangée', what: 'protège ta première rangée', tag: 'guard' }
+      : { how: `tu protèges la case ${name(T.to)}`, what: `protège la case ${name(T.to)}`, tag: 'guard' };
   }
-  return { how: 'ton coup pare la menace', tag: 'other' };
+  return { how: 'ton coup pare la menace', what: 'pare la menace', tag: 'other' };
+}
+// Échecs « pour gagner un temps » puis parade, le long de la variante (≤ 5 demi-coups) : chaque coup intermédiaire est
+// un échec, le dernier est calme, la menace existe encore juste avant lui et il ne laisse aucun mat en un coup.
+function tempoParry(c) {
+  if (c.pv.length < 3) return null;
+  let n = c.an;
+  const seq = [];
+  for (let k = 1; k + 1 < Math.min(c.pv.length, 6); k += 2) {
+    const r = n.move(c.pv[k]);
+    if (!r) return null;
+    seq.push(n.san(r));
+    const n2 = n.child(r);
+    const c2 = makeCtx({ fen: n2.fen, move: c.pv[k + 1] });
+    if (!c2 || c2.an.status) return null;
+    if (c2.an.check) { seq.push(c2.san); n = c2.an; continue; }
+    const nb2 = c2.bn.nul, T2 = nb2 && matesIn1(nb2.pos)[0];
+    if (!T2 || hasMateIn1(c2.an.pos)) return null;
+    return { seq, last: c2.san, h: parryHow(c2, T2) };
+  }
+  return null;
 }
 rule({ id: 'parry-threat', aliases: ['luft'], run(c) {
-  // Un échec ne pare rien : il retarde la menace d'un coup.
-  if (c.bn.check || c.an.status || c.an.check) return null;
+  if (c.bn.check || c.an.status) return null;
   const nb = c.bn.nul;
   if (!nb) return null;
   const threats = c.get('mThr', () => matesIn1(nb.pos));
   const them = cap(side(c.def));
   if (threats.length) {
+    const T = threats[0], arrow = { arrows: [{ from: name(T.from), to: name(T.to), cls: 'threat' }] };
+    // Un échec ne pare rien : il retarde la menace. Seule une suite vérifiée (échecs puis vraie parade) est expliquée.
+    if (c.an.check) {
+      const tp = tempoParry(c);
+      if (!tp) return null;
+      return { tags: ['parry-threat', 'parry-mate', 'tempo', tp.h.tag], idea: 'Que menace son dernier coup ?',
+        say: [`${them} menaçaient ${mv(nb.san(T), true)} mat : ton échec gagne un temps, et après ${tp.seq.map(x => mv(x)).join(' ')}, ${mv(tp.last)} ${tp.h.what}.`],
+        viz: arrow };
+    }
     if (hasMateIn1(c.an.pos)) return null;
-    const T = threats[0], h = parryHow(c, T);
+    const h = parryHow(c, T);
     return { tags: ['parry-threat', 'parry-mate', h.tag], idea: 'Que menace son dernier coup ?',
-      say: [`${them} menaçaient ${mv(nb.san(T), true)} mat : ${h.how}.`],
-      viz: { arrows: [{ from: name(T.from), to: name(T.to), cls: 'threat' }] } };
+      say: [`${them} menaçaient ${mv(nb.san(T), true)} mat : ${h.how}.`], viz: arrow };
   }
+  if (c.an.check) return null;
   const thr = captures(nb).filter(x => typeOf(x.cap) !== 'k' && seeMove(nb.pos, x) >= 2)
     .sort((a, b) => VALUE[typeOf(b.cap)] - VALUE[typeOf(a.cap)] || a.to - b.to);
   if (!thr.length) return null;

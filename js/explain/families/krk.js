@@ -55,7 +55,7 @@ rule({ id: 'approach-opp', run(c) {
   });
   if (!ok) return null;
   const piece = units(c.an.g, c.us).find(u => u.t === 'r' || u.t === 'q');
-  return { tags: ['approach-opp', 'approach'], idea: `Amène ton roi face ${au(c.def)}.`,
+  return { tags: ['approach-opp', 'approach'], idea: 'Ton roi doit participer : pense à l’opposition.',
     say: [`Ton roi se place face ${au(c.def)} : quand les rois se font face, l’échec de ${mine(piece.t)} le fait reculer.`],
     viz: { ...boxViz(c), marks: marks([c.m.to, Kd], 'mark-ok') }, viz1: boxViz(c, false) };
 } });
@@ -65,7 +65,7 @@ export default family({
   rules: ['mate', 'rescue', 'preemptive-flee', 'mate-every-reply', 'promote', 'opposition-check', 'box-shrink', 'waiting',
     'approach-opp', 'approach', 'driving-check', 'hanging-take', 'passed-push', 'lookahead', 'capture'],
   warnings: ['stalemate-danger', 'underpromo'],
-  mistakes: ['stalemate', 'missed-mate', 'piece-lost', 'useless-check', 'box-grow', 'cut-lost', 'stalemate-risk', 'king-away'],
+  mistakes: ['stalemate', 'piece-lost', 'missed-mate', 'useless-check', 'box-grow', 'cut-lost', 'stalemate-risk', 'king-away'],
   fallback: {
     idea: 'Garde la coupure et rapproche ton roi.',
     say: 'L’essentiel : garder la coupure et rapprocher ton roi.',
