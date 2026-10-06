@@ -42,20 +42,21 @@ export async function recheck(engine, spec, s) {
 }
 
 /**
- * Une gaffe nette pour l'utilisateur au trait : un coup dont l'évaluation longue (profondeur 16, au plus 3 s)
+ * Une gaffe nette pour l'utilisateur au trait : un coup dont l'évaluation longue (profondeur 20, au plus 3 s)
  * est au moins 200 cp sous le seuil d'échec `lost` (point de vue de l'utilisateur). null si aucune n'est trouvée.
  */
 export async function findBlunder(engine, fen, lost, rng) {
   const c = new Chess(fen);
   const legal = c.moves({ verbose: true });
   const lines = await engine.analyse(fen, { depth: 8, multipv: Math.min(legal.length, 40) });
-  const cands = lines.filter(l => l.cp <= lost - 300);
+  const cands = lines.filter(l => l.cp <= lost - 200);
   for (let i = cands.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [cands[i], cands[j]] = [cands[j], cands[i]]; }
   for (const l of cands.slice(0, 4)) {
     const after = new Chess(fen);
     after.move({ from: l.move.slice(0, 2), to: l.move.slice(2, 4), promotion: l.move[4] || 'q' });
     if (after.isGameOver()) continue;
-    const [r] = await engine.analyse(after.fen(), { depth: 16, movetime: 3000 });
+    // Profondeur 20 (au plus 3 s) : un mat plus lent n'est pas une gaffe dans un exercice « mat en n ».
+    const [r] = await engine.analyse(after.fen(), { depth: 20, movetime: 3000 });
     if (r && -r.cp <= lost - 200) return { move: l.move, long: -r.cp };
   }
   return null;

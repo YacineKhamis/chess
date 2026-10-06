@@ -6,7 +6,7 @@
 import { Chess } from '../../vendor/chess.js';
 import { V } from '../drill/verify.js';
 import { int, pick, shuffle, shift, sqAt, fileOf, rankOf, dist, between, fenFrom, knightTargets, kingTargets, ALL_SQUARES } from '../drill/geom.js';
-import { addNoise, addBlackPawn, attacksFrom, isAttacked, isWhite, unitsFor } from '../drill/noise.js';
+import { addNoise, addBlackPawn, attackedBy, attacksFrom, isAttacked, isWhite, unitsFor } from '../drill/noise.js';
 import { VALUE } from '../analysis.js';
 
 // ---------- Outils communs ----------
@@ -16,13 +16,14 @@ const line = (a, b) => between(a, b) || [];
 // Essaie `fn` jusqu'à `n` fois : les rejets statiques ne coûtent rien, seul le candidat retenu passe au moteur.
 const retry = (n, fn) => { for (let i = 0; i < n; i++) { const c = fn(); if (c) return c; } return null; };
 const legal = fen => { try { return new Chess(fen); } catch { return null; } };
-// La pièce blanche P posée en s : pas attaquée par les Noirs et pas d'échec au roi noir k.
-const safeWhite = (m, s, P, k) => {
-  const t = { ...m, [s]: P };
-  return !isAttacked(t, s, 'b') && !attacksFrom(t, s, P).includes(k);
+// Cases où une pièce blanche P peut se poser : pas attaquée par les Noirs, sans faire échec au roi noir k.
+// (Poser P en s ne change ni les attaques qui arrivent sur s, ni les lignes qui en partent : on calcule sur m.)
+const safeWhite = (m, k) => {
+  const black = attackedBy(m, 'b');
+  return (s, P) => !black.has(s) && !attacksFrom(m, s, P).includes(k);
 };
-// Pièces noires attaquées par la pièce posée en s.
-const blackTargets = (m, s) => attacksFrom(m, s).filter(t => m[t] && !isWhite(m[t]));
+// Pièces noires qu'attaquerait la pièce P posée en s (toutes, si P est omise : la pièce déjà en s).
+const blackTargets = (m, s, P) => attacksFrom(m, s, P).filter(t => m[t] && !isWhite(m[t]));
 
 // Lest puis bruit du niveau, autour de l'empreinte du motif. Le lest (béliers de pions, parfois une paire
 // de pièces mineures) donne du sens à l'évaluation : sans lui, « une pièce de plus » vaut souvent nulle
@@ -68,7 +69,10 @@ async function quick(ctx, c) {
   if (b.move.slice(0, 4) === key) return b.mate == null && gap >= 50;
   return !!s && s.move.slice(0, 4) === key && gap <= 60;
 }
-const checked = (opts = {}) => async (ctx, c, level) => ((await quick(ctx, c)) ? V.mat(opts)(ctx, c, level) : null);
+// deep : vérifie dès le palier 1 à la profondeur 12 (au lieu de 10). Utile au clouage, où un clouage durable
+// dans une finale dépouillée laisse souvent un autre coup presque aussi bon, invisible à la profondeur 10.
+const checked = (opts = {}, { deep = false } = {}) => async (ctx, c, level) =>
+  ((await quick(ctx, c)) ? V.mat(opts)(ctx, c, deep ? Math.max(level, 1) : level) : null);
 
 const LEVELS = [
   { label: 'Le motif seul', ballast: 2, noise: 0, tries: 60 },
@@ -101,8 +105,9 @@ function placeDecoy(rng, m, foot, xs, k, A) {
     const hits = [...attacksFrom(m2, ds), ...attacksFrom(m2, ps)];
     if (hits.some(s => s === xs || (m2[s] && isWhite(m2[s])))) continue;
     if (isAttacked(m2, ds, 'w') || isAttacked(m2, ps, 'w')) continue;
-    const spots = attacksFrom(m2, ds, A).filter(s => !m2[s] && !foot.has(s) && rankOf(s) > 0 && rankOf(s) < 7 && safeWhite(m2, s, A, k));
-    const as = pick(rng, spots.filter(s => { const t3 = { ...m2, [s]: A }; return blackTargets(t3, s).join() === ds; }));
+    const safe = safeWhite(m2, k);
+    const as = pick(rng, attacksFrom(m2, ds, A).filter(s => !m2[s] && !foot.has(s) && rankOf(s) > 0 && rankOf(s) < 7
+      && safe(s, A) && blackTargets(m2, s, A).join() === ds));
     if (!as) continue;
     return { m: { ...m2, [as]: A }, ds, ps, as };
   }
@@ -120,8 +125,9 @@ function genHanging(rng, L, sub) {
   m[xs] = X;
   // L'attaquant : une case d'où il attaque X, sans être attaqué lui-même et sans faire échec.
   let Y = null, ys = null;
+  const safe = safeWhite(m, k);
   for (const T of shuffle(rng, ['N', 'B', 'R', 'Q'])) {
-    const spots = attacksFrom(m, xs, T).filter(s => !m[s] && rankOf(s) < 7 && safeWhite(m, s, T, k));
+    const spots = attacksFrom(m, xs, T).filter(s => !m[s] && rankOf(s) < 7 && safe(s, T));
     if (spots.length) { Y = T; ys = pick(rng, spots); break; }
   }
   if (!ys) return null;
@@ -310,6 +316,6 @@ export default [
     tip: 'Une pièce clouée devant son roi ne peut pas fuir : attaque-la avec moins cher qu’elle, un pion par exemple.',
     ideas: ['pin'],
     generate(rng, level, sub) { return retry(300, () => genPin(rng, this.levels[level], sub)); },
-    verify: checked(),
+    verify: checked({}, { deep: true }),
   },
 ];
