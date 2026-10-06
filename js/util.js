@@ -1,14 +1,20 @@
 import { Chess } from '../vendor/chess.js';
+import { migrate } from './progress.js';
 export { Chess };
 
 // ---------- Progression (stockée dans ce navigateur) ----------
 const KEY = 'manuel-echecs-v1';
 let cache = null;
+// Garantit les rubriques v1 (finales, menace, puzzles, jours, stats) puis passe le tout au schéma v2.
+function init(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) s = {};
+  s.finales ||= {}; s.menace ||= {}; s.puzzles ||= {}; s.days ||= {}; s.stats ||= {};
+  return migrate(s);
+}
 export function load() {
   if (cache) return cache;
-  try { cache = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { cache = {}; }
-  cache.finales ||= {}; cache.menace ||= {}; cache.puzzles ||= {}; cache.days ||= {};
-  return cache;
+  try { cache = JSON.parse(localStorage.getItem(KEY)); } catch { cache = null; }
+  return (cache = init(cache));
 }
 export function save() {
   try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch { /* stockage indisponible */ }
@@ -20,8 +26,12 @@ export function logActivity() {
   save();
 }
 export function exportProgress() { return JSON.stringify(load()); }
-export function importProgress(json) { cache = JSON.parse(json); save(); load(); }
-export function resetProgress() { cache = {}; save(); load(); }
+export function importProgress(json) {
+  const s = JSON.parse(json);
+  if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Error('Sauvegarde invalide');
+  cache = init(s); save();
+}
+export function resetProgress() { cache = init({}); save(); }
 
 // Répétition espacée très simple (boîtes de Leitner).
 // box 0 = raté récemment ; chaque réussite fait monter d'une boîte.

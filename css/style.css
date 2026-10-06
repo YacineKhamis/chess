@@ -171,6 +171,8 @@ h1, h2 { font-family: var(--display); line-height: 1.1; margin: 0; }
 /* ---------- Échiquier ---------- */
 .board-wrap { width: 100%; max-width: 600px; }
 .board {
+  --hint: #2f6fb3;          /* indices, lignes, plans */
+  --key: #a76a06;           /* contour des cases clés */
   position: relative;
   width: 100%;
   aspect-ratio: 1;
@@ -207,8 +209,37 @@ h1, h2 { font-family: var(--display); line-height: 1.1; margin: 0; }
   border-radius: 50%;
   border: 5px solid rgba(20, 30, 30, .35);
 }
+/* Zone teintée (une à la fois) : setZone(cases, 'zone' | 'zone-ok' | 'zone-key' | 'zone-hint') */
+.sq.zone::before, .sq.zone-ok::before, .sq.zone-key::before, .sq.zone-hint::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--zone-c, var(--ko)) 30%, transparent);
+  pointer-events: none;
+}
+.sq.zone-ok { --zone-c: var(--ok); }
+.sq.zone-key { --zone-c: var(--accent); }
+.sq.zone-hint { --zone-c: var(--hint); }
+/* Repères : anneau, aplat (ombre intérieure, sous les pièces) ou point */
 .sq.mark-ok { box-shadow: inset 0 0 0 5px var(--ok); }
 .sq.mark-ko { box-shadow: inset 0 0 0 5px var(--ko); }
+.sq.mark-hint { box-shadow: inset 0 0 0 5px var(--hint), inset 0 0 0 99px color-mix(in srgb, var(--hint) 22%, transparent); }
+.sq.mark-line { box-shadow: inset 0 0 0 99px color-mix(in srgb, var(--hint) 30%, transparent); }
+.sq.mark-key {
+  box-shadow: inset 0 0 0 99px color-mix(in srgb, var(--accent) 34%, transparent);
+  outline: 3px dashed var(--key);
+  outline-offset: -7px;
+}
+.sq.mark-escape::after {
+  content: '';
+  position: absolute;
+  inset: 35%;
+  border-radius: 50%;
+  background: var(--ko);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .75);
+  pointer-events: none;
+}
+.sq.selected { box-shadow: inset 0 0 0 4px var(--accent); }  /* la sélection reste visible sur une case marquée */
 .piece {
   position: absolute;
   inset: 0;
@@ -232,7 +263,53 @@ h1, h2 { font-family: var(--display); line-height: 1.1; margin: 0; }
 .arrow { stroke-width: .17; stroke-linecap: round; opacity: .82; }
 .arrow.threat { stroke: var(--ko); } .arrow-head.threat { fill: var(--ko); }
 .arrow.good { stroke: var(--ok); } .arrow-head.good { fill: var(--ok); }
-.arrow.hint { stroke: #2f6fb3; } .arrow-head.hint { fill: #2f6fb3; }
+.arrow.hint { stroke: var(--hint); } .arrow-head.hint { fill: var(--hint); }
+.arrow.plan { stroke: var(--hint); stroke-dasharray: .12 .36; opacity: .5; } .arrow-head.plan { fill: var(--hint); }
+@media (prefers-color-scheme: dark) {
+  .board { --hint: #4f8fd8; --key: #f0b43c; }
+}
+
+/* Sélecteur de promotion : voile sur l’échiquier, 4 pièces en colonne depuis la case de promotion */
+.promo {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(12, 20, 22, .5);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  animation: promo-in .12s ease-out;
+}
+.promo-col { position: absolute; width: 12.5%; height: 50%; display: flex; flex-direction: column; }
+.promo-col.up { flex-direction: column-reverse; }
+.promo-btn {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.promo-btn::before {
+  content: '';
+  position: absolute;
+  inset: 4%;
+  border-radius: 50%;
+  background: var(--sq-light);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35), inset 0 0 0 2px var(--sq-dark);
+  transition: background-color .12s;
+}
+.promo-btn img { position: relative; display: block; width: 100%; height: 100%; pointer-events: none; transition: transform .12s; }
+.promo-btn:focus-visible::before { background: color-mix(in srgb, var(--accent) 45%, var(--sq-light)); }
+.promo-btn:focus-visible img { transform: scale(1.08); }
+@media (hover: hover) {
+  .promo-btn:hover::before { background: color-mix(in srgb, var(--accent) 45%, var(--sq-light)); }
+  .promo-btn:hover img { transform: scale(1.08); }
+}
+.promo-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
+@keyframes promo-in { from { opacity: 0; } }
 
 /* Sur téléphone : titre, puis échiquier, puis consigne et boutons juste dessous */
 @media (max-width: 899px) {
@@ -250,4 +327,6 @@ h1, h2 { font-family: var(--display); line-height: 1.1; margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .verdict { transition: none; }
+  .promo { animation: none; }
+  .promo-btn::before, .promo-btn img { transition: none; }
 }

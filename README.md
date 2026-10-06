@@ -2,13 +2,39 @@
 
 Un manuel d’entraînement interactif, découpé en compétences, avec des exercices courts et répétables. Site statique, hébergé gratuitement sur GitHub Pages, sans serveur : tout tourne dans le navigateur.
 
-## Les trois modules
+## Le parcours d’exercices
 
-**Quelle est la menace ?** L’adversaire vient de jouer. Tu touches la case où il voudrait jouer ensuite, puis tu joues un coup qui pare la menace. Entraîne directement la question 1 de la checklist. Positions tirées de parties générées et vérifiées par Stockfish (`data/menace.json`).
+Le cœur du site : des exercices qui isolent **une seule idée**, joués jusqu’au bout contre un défenseur parfait, depuis des positions **toujours différentes mais équivalentes** (placement au hasard, miroir, couleurs inversées). À force de répétitions, les motifs apparaissent.
+
+Sept parcours, du plus isolé au plus réaliste :
+
+- **Mats de base** : deux tours, dame, tour, puis les mêmes mats avec des pions bloqués sur l’échiquier (le pat arrive plus vite).
+- **Finales de pions** : la règle du carré, le roi devant le pion, l’opposition, les cases clés, tenir la nulle, le pion de la tour.
+- **Pièce contre pion** : dame contre pion en 7e (et la défense par le pat), tour contre pion.
+- **Finales de tours** : Lucena pour gagner, Philidor pour tenir.
+- **Motifs tactiques** : pièce en prise, fourchette, enfilade, clouage, d’abord seuls puis cachés parmi d’autres pièces.
+- **Images de mat** : mat du couloir, mat à l’étouffée, batterie dame-fou.
+- **Vigilance** : parer la menace adverse avant de jouer son plan (question 1 de la checklist).
+
+Pendant la partie :
+
+- **Indice en trois marches** : l’idée, puis la pièce à jouer, puis le coup avec son explication (« ta tour resserre la boîte : le roi noir passe de 20 à 12 cases »).
+- **Verdict immédiat** : un coup qui laisse filer le gain (ou la nulle) arrête la partie ; « Pourquoi ? » montre ton coup, le bon coup et la raison, « Reprendre avant l’erreur » permet de rejouer le moment critique.
+- **Référence objective** : le mat ou la promotion le plus rapide possible, calculé exactement par des tables de finales pour les finales à trois pièces.
+
+La progression :
+
+- Chaque exercice a des **paliers** (par exemple : mat en 1 à 3, puis 4 à 7, puis la partie complète). Trois parties propres font monter d’un palier, un échec fait redescendre.
+- **Acquis** = 3 parties propres d’affilée au dernier palier, avec les Blancs et les Noirs. **Maîtrisé** = encore propre après une nuit. Ensuite des **contrôles** de plus en plus espacés (1, 3, 7, 14, 30 jours…).
+- La **séance du jour** propose les contrôles dus, l’exercice en cours, une nouveauté et un **mélange** d’exercices acquis (sans dire lesquels).
+
+## Les modules d’origine
+
+**Quelle est la menace ?** L’adversaire vient de jouer. Tu touches la case où il voudrait jouer ensuite, puis tu joues un coup qui pare la menace. Positions tirées de parties générées et vérifiées par Stockfish (`data/menace.json`).
 
 **Puzzles par thème.** Choisis un thème (fourchette, clouage, pièce en prise, mats…). Les puzzles ratés reviennent jusqu’à ce qu’ils soient réussis, puis de plus en plus espacés.
 
-**Finales de base.** Deux tours, dame ou tour contre roi, depuis une position au hasard, contre Stockfish qui défend au mieux. Le site affiche le mat optimal pour comparer.
+L’ancienne page « Finales de base » existe toujours (`#/finales`) : ce sont les trois premiers mats du parcours.
 
 ## Mise en ligne (une seule fois)
 
@@ -36,18 +62,32 @@ Elle est enregistrée dans le navigateur de l’appareil utilisé. Depuis l’ac
 
 ```
 index.html              page unique
-css/style.css           apparence
+css/style.css           apparence (échiquier, modules d’origine)
+css/exercices.css       apparence du parcours et de la séance
 js/main.js              accueil et navigation
-js/board.js             échiquier (toucher ou glisser)
+js/board.js             échiquier (toucher ou glisser, promotion, zones, flèches)
 js/engine.js            pilote du moteur Stockfish
-js/util.js              progression, répétition espacée, notation française
-js/modules/             un fichier par module
-data/                   exercices (JSON)
+js/analysis.js          géométrie : cage du roi, opposition, carré du pion, symétries
+js/util.js              sauvegarde, notation française
+js/progress.js          progression : paliers, acquis, contrôles, séance du jour
+js/tb/                  tables de finales exactes (roi + dame, tour ou pion contre roi)
+js/drill/               moteur d’exercices : génération, vérification, objectifs, déroulé d’une partie
+js/drills/              catalogue : un fichier par parcours
+js/explain/             explications des indices et des erreurs
+js/modules/             écrans : exercice, parcours, séance, menace, puzzles
+data/                   exercices (JSON) et tables de finales (data/tb/*.bin)
+tools/build_tb.mjs      construction des tables de finales
 tools/build_puzzles.py  extraction des puzzles Lichess
+tools/test/             tests (node --test 'tools/test/*.test.mjs')
 vendor/                 chess.js et Stockfish (copies locales)
+docs/conception-v2.md   conception détaillée du parcours (en anglais)
 ```
 
 Format d’un puzzle (identique à Lichess) : `fen` est la position avant le coup adverse, `moves` liste les coups en notation UCI ; le premier est joué par l’adversaire, puis on alterne.
+
+## Tests
+
+Node 22 suffit, sans installation : `node --test 'tools/test/*.test.mjs'`. `QUICK=1` pour une version rapide, `FULL=1` pour la version complète, `ONLY=<id>` pour un seul exercice. Stockfish tourne dans Node avec la même copie que le site.
 
 ## Licences
 
