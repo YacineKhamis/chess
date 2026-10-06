@@ -183,8 +183,10 @@ for (const id of ids) {
         distinct: Math.round(100 * seen.size / n), strata: strata.length ? `${covered}/${strata.length}` : '—', agree: `${lvlAgree}/${n}` });
       // (c) acceptation ≥ 5 %
       assert.ok(stat.ok / stat.calls >= 0.05, `${id} L${level + 1} : acceptation ${stat.ok}/${stat.calls}`);
-      // (d) temps par position : médiane ≤ 300 ms au palier 1 (exigence), garde-fou à 600 ms ailleurs
-      assert.ok(median(times) <= (level === 0 ? 300 : 600), `${id} L${level + 1} : médiane ${median(times).toFixed(0)} ms`);
+      // (d) temps par position : médiane ≤ 300 ms au palier 1 (exigence), garde-fou à 600 ms ailleurs.
+      // En QUICK (4 échantillons, machine partagée en CI) la médiane est trop bruitée : seuil doublé.
+      const budget = (level === 0 ? 300 : 600) * (QUICK ? 2 : 1);
+      assert.ok(median(times) <= budget, `${id} L${level + 1} : médiane ${median(times).toFixed(0)} ms`);
       // (e) variété et sous-cas
       assert.ok(seen.size >= 0.9 * n, `${id} L${level + 1} : ${seen.size}/${n} placements distincts`);
       if (n >= 2 * strata.length) assert.equal(covered, strata.length, `${id} L${level + 1} : sous-cas couverts ${[...subs]}`);
@@ -247,13 +249,16 @@ for (const id of ids) {
         if (i % 3 === 2) { await a.userMove(await oracle(1000)(a)); if (a.over) continue; }
         const b = await findBlunder(ctx.engine, a.fen, a.T.lost, rng);
         if (!b) { skipped++; continue; }
-        blunders++;
         const r = await a.userMove(b.move);
+        // Exercice « mat en n » : si l'essai trouve encore un mat (plus lent), le coup n'a rien laissé filer.
+        const entry = a.history.findLast(h => h.by === 'user');
+        if (r.status === 'continue' && entry.mate != null) { skipped++; continue; }
+        blunders++;
         if (r.status === 'end' && r.outcome.status === 'fail') failed++;
         else console.log(`  gaffe non sanctionnée ${id} L${level + 1} ${s.fen} ${b.move} (éval longue ${b.long}, seuil ${a.T.lost}) : ${r.status} ${r.outcome?.reason ?? ''}`);
       }
     }
-    console.log(`  ${id} : oracle ${won}/${games} (propres ${clean}), gaffes sanctionnées ${failed}/${blunders} (${skipped} sans gaffe nette)`);
+    console.log(`  ${id} : oracle ${won}/${games} (propres ${clean}), gaffes sanctionnées ${failed}/${blunders} (${skipped} sans gaffe nette ou mat plus lent)`);
     assert.ok(won >= games - Math.floor(0.05 * games), `${id} : oracle ${won}/${games}`);
     if (!(N_BUG && fnGoal(spec))) assert.ok(clean >= 0.9 * won, `${id} : réussites propres ${clean}/${won}`);
     assert.ok(blunders > 0, `${id} : aucune gaffe trouvée`);

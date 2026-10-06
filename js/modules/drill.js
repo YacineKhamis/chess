@@ -8,7 +8,7 @@ import { kingZone, other } from '../analysis.js';
 import { DRILLS, TRACKS, REGISTRY } from '../drills/index.js';
 import { produce, replay } from '../drill/produce.js';
 import { Attempt } from '../drill/attempt.js';
-import { slackMate, slackPromo } from '../drill/goals.js';
+import { slackMate, slackPromo, goalN } from '../drill/goals.js';
 import * as P from '../progress.js';
 
 // Contexte partagé : moteur, tables exactes, hasard.
@@ -91,10 +91,10 @@ export function mount(root, id, { tabs = null, onDone = null, mystery = false, r
     if (!attempt) { setText(meta, ''); return; }
     const a = attempt, n = a.userMoves, ref = a.ref, g = spec.goal;
     let s = '';
-    if (g.kind === 'mate' && g.n) s = `Mat en ${g.n} · coup ${n}`;
+    if (g.kind === 'mate' && g.n) s = `Mat en ${goalN(g, a.level)} · coup ${n}`;
     else if (g.kind === 'mate' && ref) s = `${spec.oracle === 'tb' ? `Mat en ${ref} au mieux` : `Mat possible en ${ref}`} · coup ${n} · limite propre ${ref + slackMate(ref)}`;
     else if (g.kind === 'promote' && ref) s = `Promotion sûre possible en ${plural(ref, 'coup')} · coup ${n} · limite propre ${ref + slackPromo(ref)}`;
-    else if (g.kind === 'hold') s = `Coup ${n}/${g.n}`;
+    else if (g.kind === 'hold') s = `Coup ${n}/${goalN(g, a.level)}`;
     else if (g.kind === 'material' && a.k) s = `Gain le plus rapide : ${plural(a.k, 'coup')} · coup ${n}`;
     else s = `Coup ${n}`;
     if (a.hints) s += ` · ${plural(a.hints, 'indice')}`;

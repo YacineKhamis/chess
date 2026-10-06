@@ -58,7 +58,7 @@ export function finalize(spec, c, v, { mirror = false, flip = false } = {}) {
     id: spec.id, level: c.level, sub: c.sub ?? null, fen,
     canonical: c.fen, mirror, flip,
     userColor: flip ? (spec.userSide === 'w' ? 'b' : 'w') : spec.userSide,
-    key: map(c.key), keySet: map(c.keySet), roles: map({ ...(c.roles || {}), ...(v.roles || {}) }),
+    key: map(v.key ?? c.key), keySet: map(v.keySet ?? c.keySet), roles: map({ ...(c.roles || {}), ...(v.roles || {}) }),
     pv: map(v.pv), ref: v.ref ?? null, E0: v.E0 ?? null, Ealt: v.Ealt ?? null, k: v.k ?? null,
   };
 }

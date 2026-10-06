@@ -54,12 +54,14 @@ function coversOf(reg, spec) {
 export const coveredByKnown = (s, reg, id) => (reg?.coveredBy?.[id] || []).some(y => isKnown(stateOf(s, y)));
 
 // ---------- §4.1 Codes de résultat ----------
+// goal.n peut dépendre du palier (même définition que js/drill/goals.js, ce module n'importe rien).
+export const goalN = (goal, level = 0) => (typeof goal.n === 'function' ? goal.n(level ?? 0) : goal.n);
 export const slackMate = r => Math.max(2, Math.ceil(r / 4));
 export const slackPromo = r => Math.max(3, Math.ceil(r / 3));
 // Règle « propre » du tableau §2.4, utilisée quand la tentative ne fournit pas `clean` elle-même.
 export function isClean(goal = {}, a) {
   const m = a.moves ?? 0, ref = a.ref;
-  if (goal.kind === 'mate') return goal.n ? m <= goal.n : !ref || m <= ref + slackMate(ref);
+  if (goal.kind === 'mate') return goal.n ? m <= goalN(goal, a.level) : !ref || m <= ref + slackMate(ref);
   if (goal.kind === 'promote') return !ref || m <= ref + slackPromo(ref);
   if (goal.kind === 'material') return a.k == null || m <= a.k + 1;
   return true;
@@ -394,7 +396,7 @@ export function resultText({ spec, code, attempt: a = {}, before = null, after =
   const g = spec.goal || {}, m = a.moves ?? 0, ref = a.ref, top = topOf(spec);
   // 1. Le compteur, pour les objectifs mesurés en coups.
   if (code === 'C' || code === 'S') {
-    if (g.kind === 'mate' && g.n) out.push(code === 'C' ? `Mat en ${g.n} trouvé.` : `Mat en ${plural(m, 'coup')} au lieu de ${g.n}.`);
+    if (g.kind === 'mate' && g.n) { const n = goalN(g, a.level); out.push(code === 'C' ? `Mat en ${n} trouvé.` : `Mat en ${plural(m, 'coup')} au lieu de ${n}.`); }
     else if (g.kind === 'mate' || g.kind === 'promote') {
       const what = g.kind === 'mate' ? 'Mat' : 'Promotion sûre';
       if (!ref) out.push(`${what} en ${plural(m, 'coup')}.`);

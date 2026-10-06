@@ -4,6 +4,8 @@ import { yourPiece } from '../util.js';
 
 const cap = s => s[0].toUpperCase() + s.slice(1);
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
+// goal.n peut dépendre du palier (images de mat : mat en 1 puis en 2).
+export const goalN = (goal, level = 0) => (typeof goal.n === 'function' ? goal.n(level) : goal.n);
 export const win = (reason, extra = {}) => ({ status: 'success', reason, ...extra });
 export const fail = (reason, extra = {}) => ({ status: 'fail', reason, ...extra });
 const nonPawn = (chess, color) => pieces(chess, color).filter(p => p.type !== 'k' && p.type !== 'p');
@@ -46,9 +48,9 @@ function wonSignature(st) {
 
 export const GOALS = {
   mate: {
-    text: (spec, st) => (spec.goal.n ? `Mat en ${spec.goal.n}.` : `Mate le roi ${st.userColor === 'w' ? 'noir' : 'blanc'}.`),
+    text: (spec, st) => (spec.goal.n ? `Mat en ${goalN(spec.goal, st.level)}.` : `Mate le roi ${st.userColor === 'w' ? 'noir' : 'blanc'}.`),
     afterVerdict(st, j) {
-      const n = st.spec.goal.n;
+      const n = goalN(st.spec.goal, st.level);
       if (n && j.mate != null) {
         if (st.userMoves + j.mate > n) st.late = true;
         if (st.userMoves > n + 2) return fail(`Trop long : le mat devait venir en ${n} coups.`);
@@ -60,7 +62,7 @@ export const GOALS = {
       return null;
     },
     clean(st) {
-      if (st.spec.goal.n) return st.userMoves <= st.spec.goal.n && !st.late;
+      if (st.spec.goal.n) return st.userMoves <= goalN(st.spec.goal, st.level) && !st.late;
       return !st.ref || st.userMoves <= st.ref + slackMate(st.ref);
     },
   },
@@ -89,9 +91,9 @@ export const GOALS = {
   },
 
   hold: {
-    text: (spec) => (spec.goal.band === 'keep'
-      ? `Que menace l’adversaire ? Pare la menace et garde ton avantage (${plural(spec.goal.n, 'coup')}).`
-      : `Tiens la nulle pendant ${plural(spec.goal.n, 'coup')}.`),
+    text: (spec, st) => (spec.goal.band === 'keep'
+      ? `Que menace l’adversaire ? Pare la menace et garde ton avantage (${plural(goalN(spec.goal, st.level), 'coup')}).`
+      : `Tiens la nulle pendant ${plural(goalN(spec.goal, st.level), 'coup')}.`),
     afterAny(st) {
       if (st.spec.oracle !== 'engine') return null;
       const c = st.chess, me = st.userColor;
@@ -104,7 +106,8 @@ export const GOALS = {
       return null;
     },
     afterVerdict(st) {
-      if (st.userMoves >= st.spec.goal.n) return win(st.spec.goal.band === 'keep' ? 'Menace parée et avantage conservé.' : `Tu as tenu ${plural(st.spec.goal.n, 'coup')} : nulle !`);
+      const n = goalN(st.spec.goal, st.level);
+      if (st.userMoves >= n) return win(st.spec.goal.band === 'keep' ? 'Menace parée et avantage conservé.' : `Tu as tenu ${plural(n, 'coup')} : nulle !`);
       return null;
     },
     clean: () => true,
